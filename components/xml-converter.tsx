@@ -5,38 +5,109 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { parseNFE, type NFEData } from "@/lib/nfe-parser"
 import { generatePDF } from "@/lib/pdf-generator"
-import { FileText, Upload, Download, AlertCircle, CheckCircle2, X } from "lucide-react"
+import {
+  FileText,
+  Upload,
+  Download,
+  AlertCircle,
+  CheckCircle2,
+  X,
+  FileArchive,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react"
+import JSZip from "jszip"
+
+interface ProcessedFile {
+  fileName: string
+  nfeData: NFEData | null
+  error: string | null
+}
 
 export function XMLConverter() {
-  const [file, setFile] = useState<File | null>(null)
-  const [nfeData, setNfeData] = useState<NFEData | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [files, setFiles] = useState<ProcessedFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
 
-  const processFile = useCallback(async (selectedFile: File) => {
-    setError(null)
-    setNfeData(null)
+  const processXMLContent = async (
+    fileName: string,
+    content: string
+  ): Promise<ProcessedFile> => {
+    try {
+      const data = parseNFE(content)
+      return { fileName, nfeData: data, error: null }
+    } catch (err) {
+      console.error(`Erro ao processar ${fileName}:`, err)
+      return { fileName, nfeData: null, error: "Erro ao processar arquivo XML" }
+    }
+  }
 
-    if (!selectedFile.name.toLowerCase().endsWith(".xml")) {
-      setError("Por favor, selecione um arquivo XML valido.")
-      return
+  const processZipFile = async (zipFile: File): Promise<ProcessedFile[]> => {
+    const zip = new JSZip()
+    const contents = await zip.loadAsync(zipFile)
+    const results: ProcessedFile[] = []
+
+    const xmlFiles = Object.keys(contents.files).filter(
+      (name) => name.toLowerCase().endsWith(".xml") && !contents.files[name].dir
+    )
+
+    for (const fileName of xmlFiles) {
+      const fileContent = await contents.files[fileName].async("string")
+      const result = await processXMLContent(fileName, fileContent)
+      results.push(result)
     }
 
-    try {
-      const text = await selectedFile.text()
-      const data = parseNFE(text)
-      setNfeData(data)
-      setFile(selectedFile)
-    } catch (err) {
-      console.error(err)
-      setError("Erro ao processar o arquivo XML. Verifique se o arquivo esta correto.")
+    return results
+  }
+
+  const processFiles = useCallback(async (selectedFiles: FileList) => {
+    setIsProcessing(true)
+    setFiles([])
+    setExpandedIndex(null)
+
+    const results: ProcessedFile[] = []
+
+    for (const file of Array.from(selectedFiles)) {
+      const fileName = file.name.toLowerCase()
+
+      if (fileName.endsWith(".zip")) {
+        try {
+          const zipResults = await processZipFile(file)
+          results.push(...zipResults)
+        } catch {
+          results.push({
+            fileName: file.name,
+            nfeData: null,
+            error: "Erro ao extrair arquivo ZIP",
+          })
+        }
+      } else if (fileName.endsWith(".xml")) {
+        const content = await file.text()
+        const result = await processXMLContent(file.name, content)
+        results.push(result)
+      } else {
+        results.push({
+          fileName: file.name,
+          nfeData: null,
+          error: "Formato nao suportado. Use XML ou ZIP.",
+        })
+      }
+    }
+
+    setFiles(results)
+    setIsProcessing(false)
+
+    if (results.length === 1 && results[0].nfeData) {
+      setExpandedIndex(0)
     }
   }, [])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0]
-    if (selectedFile) {
-      processFile(selectedFile)
+    const selectedFiles = e.target.files
+    if (selectedFiles && selectedFiles.length > 0) {
+      processFiles(selectedFiles)
     }
   }
 
@@ -44,12 +115,12 @@ export function XMLConverter() {
     (e: React.DragEvent) => {
       e.preventDefault()
       setIsDragOver(false)
-      const droppedFile = e.dataTransfer.files[0]
-      if (droppedFile) {
-        processFile(droppedFile)
+      const droppedFiles = e.dataTransfer.files
+      if (droppedFiles.length > 0) {
+        processFiles(droppedFiles)
       }
     },
-    [processFile]
+    [processFiles]
   )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -62,18 +133,48 @@ export function XMLConverter() {
     setIsDragOver(false)
   }, [])
 
-  const handleDownloadPDF = () => {
-    if (!nfeData) return
+  const handleDownloadPDF = (processedFile: ProcessedFile) => {
+    if (!processedFile.nfeData) return
 
-    const doc = generatePDF(nfeData)
-    const fileName = `NF_${nfeData.numero || "documento"}_${Date.now()}.pdf`
+    const doc = generatePDF(processedFile.nfeData)
+    const baseName = processedFile.fileName.replace(/\.xml$/i, "")
+    const fileName = `NF_${processedFile.nfeData.numero || baseName}_${Date.now()}.pdf`
     doc.save(fileName)
   }
 
+  const handleDownloadAllPDFs = async () => {
+    const successfulFiles = files.filter((f) => f.nfeData !== null)
+    if (successfulFiles.length === 0) return
+
+    if (successfulFiles.length === 1) {
+      handleDownloadPDF(successfulFiles[0])
+      return
+    }
+
+    const zip = new JSZip()
+
+    for (const file of successfulFiles) {
+      if (file.nfeData) {
+        const doc = generatePDF(file.nfeData)
+        const pdfBlob = doc.output("blob")
+        const baseName = file.fileName.replace(/\.xml$/i, "")
+        const pdfName = `NF_${file.nfeData.numero || baseName}.pdf`
+        zip.file(pdfName, pdfBlob)
+      }
+    }
+
+    const zipBlob = await zip.generateAsync({ type: "blob" })
+    const url = URL.createObjectURL(zipBlob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `notas_fiscais_${Date.now()}.zip`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const handleClear = () => {
-    setFile(null)
-    setNfeData(null)
-    setError(null)
+    setFiles([])
+    setExpandedIndex(null)
   }
 
   const formatCurrency = (value: number) => {
@@ -82,6 +183,9 @@ export function XMLConverter() {
       currency: "BRL",
     })
   }
+
+  const successCount = files.filter((f) => f.nfeData !== null).length
+  const errorCount = files.filter((f) => f.error !== null).length
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
@@ -101,9 +205,9 @@ export function XMLConverter() {
         {/* Upload Area */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-lg">Upload do Arquivo</CardTitle>
+            <CardTitle className="text-lg">Upload de Arquivos</CardTitle>
             <CardDescription>
-              Arraste e solte ou clique para selecionar o arquivo XML
+              Arraste arquivos XML ou um arquivo ZIP contendo multiplos XMLs
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -119,219 +223,344 @@ export function XMLConverter() {
             >
               <input
                 type="file"
-                accept=".xml"
+                accept=".xml,.zip"
+                multiple
                 onChange={handleFileChange}
                 className="absolute inset-0 cursor-pointer opacity-0"
               />
-              <Upload
-                className={`mb-4 h-12 w-12 ${isDragOver ? "text-primary" : "text-muted-foreground"}`}
-              />
-              <p className="mb-1 text-sm font-medium text-foreground">
-                {isDragOver ? "Solte o arquivo aqui" : "Arraste o arquivo XML aqui"}
-              </p>
-              <p className="text-xs text-muted-foreground">ou clique para selecionar</p>
-              {file && (
-                <div className="mt-4 flex items-center gap-2 rounded-md bg-muted px-3 py-2">
-                  <FileText className="h-4 w-4 text-primary" />
-                  <span className="text-sm">{file.name}</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleClear()
-                    }}
-                    className="ml-2 rounded p-1 hover:bg-background"
-                  >
-                    <X className="h-4 w-4 text-muted-foreground" />
-                  </button>
-                </div>
+              {isProcessing ? (
+                <>
+                  <Loader2 className="mb-4 h-12 w-12 animate-spin text-primary" />
+                  <p className="text-sm font-medium text-foreground">Processando arquivos...</p>
+                </>
+              ) : (
+                <>
+                  <div className="mb-4 flex items-center gap-3">
+                    <Upload
+                      className={`h-10 w-10 ${isDragOver ? "text-primary" : "text-muted-foreground"}`}
+                    />
+                    <FileArchive
+                      className={`h-10 w-10 ${isDragOver ? "text-primary" : "text-muted-foreground"}`}
+                    />
+                  </div>
+                  <p className="mb-1 text-sm font-medium text-foreground">
+                    {isDragOver ? "Solte os arquivos aqui" : "Arraste arquivos XML ou ZIP aqui"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    ou clique para selecionar (suporta multiplos arquivos)
+                  </p>
+                </>
               )}
             </div>
 
-            {error && (
-              <div className="mt-4 flex items-center gap-2 rounded-md bg-destructive/10 px-4 py-3 text-destructive">
-                <AlertCircle className="h-5 w-5 flex-shrink-0" />
-                <p className="text-sm">{error}</p>
+            {files.length > 0 && (
+              <div className="mt-4 flex items-center justify-between">
+                <div className="flex items-center gap-4 text-sm">
+                  {successCount > 0 && (
+                    <span className="flex items-center gap-1 text-green-600">
+                      <CheckCircle2 className="h-4 w-4" />
+                      {successCount} processado{successCount > 1 ? "s" : ""}
+                    </span>
+                  )}
+                  {errorCount > 0 && (
+                    <span className="flex items-center gap-1 text-destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      {errorCount} erro{errorCount > 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {successCount > 0 && (
+                    <Button onClick={handleDownloadAllPDFs} size="sm" className="gap-2">
+                      <Download className="h-4 w-4" />
+                      Baixar {successCount > 1 ? `Todos (${successCount})` : "PDF"}
+                    </Button>
+                  )}
+                  <Button onClick={handleClear} variant="outline" size="sm">
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Preview */}
-        {nfeData && (
-          <Card className="mb-6">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <CheckCircle2 className="h-5 w-5 text-green-600" />
-                  Documento Processado
-                </CardTitle>
-                <CardDescription>
-                  {nfeData.tipo === "NFe"
-                    ? "Nota Fiscal Eletronica"
-                    : nfeData.tipo === "NFSe"
-                      ? "Nota Fiscal de Servicos"
-                      : "Documento Fiscal"}
-                </CardDescription>
-              </div>
-              <Button onClick={handleDownloadPDF} className="gap-2">
-                <Download className="h-4 w-4" />
-                Baixar PDF
-              </Button>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Info Geral */}
-              <div className="grid gap-4 rounded-lg bg-muted/50 p-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div>
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Numero</p>
-                  <p className="text-lg font-semibold">{nfeData.numero || "N/A"}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Serie</p>
-                  <p className="text-lg font-semibold">{nfeData.serie || "N/A"}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Data Emissao</p>
-                  <p className="text-lg font-semibold">{nfeData.dataEmissao || "N/A"}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Valor Total</p>
-                  <p className="text-lg font-semibold text-primary">
-                    {formatCurrency(nfeData.totais.valorTotal)}
-                  </p>
-                </div>
-              </div>
+        {/* File List */}
+        {files.length > 0 && (
+          <div className="space-y-4">
+            {files.map((processedFile, index) => (
+              <Card
+                key={index}
+                className={processedFile.error ? "border-destructive/50" : ""}
+              >
+                <CardHeader
+                  className="cursor-pointer"
+                  onClick={() =>
+                    processedFile.nfeData &&
+                    setExpandedIndex(expandedIndex === index ? null : index)
+                  }
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {processedFile.error ? (
+                        <AlertCircle className="h-5 w-5 flex-shrink-0 text-destructive" />
+                      ) : (
+                        <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-green-600" />
+                      )}
+                      <div>
+                        <CardTitle className="text-base">{processedFile.fileName}</CardTitle>
+                        {processedFile.error ? (
+                          <CardDescription className="text-destructive">
+                            {processedFile.error}
+                          </CardDescription>
+                        ) : processedFile.nfeData ? (
+                          <CardDescription>
+                            {processedFile.nfeData.tipo === "NFe"
+                              ? "NF-e"
+                              : processedFile.nfeData.tipo === "NFSe"
+                                ? "NFS-e"
+                                : "Nota Fiscal"}{" "}
+                            - Numero: {processedFile.nfeData.numero || "N/A"} -{" "}
+                            {formatCurrency(processedFile.nfeData.totais.valorTotal)}
+                          </CardDescription>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {processedFile.nfeData && (
+                        <>
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDownloadPDF(processedFile)
+                            }}
+                            size="sm"
+                            variant="outline"
+                            className="gap-2"
+                          >
+                            <Download className="h-4 w-4" />
+                            PDF
+                          </Button>
+                          {expandedIndex === index ? (
+                            <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </CardHeader>
 
-              {/* Emitente e Destinatario */}
-              <div className="grid gap-6 md:grid-cols-2">
-                <div className="rounded-lg border p-4">
-                  <h3 className="mb-3 font-semibold text-foreground">Emitente</h3>
-                  <div className="space-y-1 text-sm">
-                    <p className="font-medium">{nfeData.emitente.nome || "N/A"}</p>
-                    {nfeData.emitente.nomeFantasia && (
-                      <p className="text-muted-foreground">{nfeData.emitente.nomeFantasia}</p>
-                    )}
-                    <p className="text-muted-foreground">CNPJ: {nfeData.emitente.cnpj || "N/A"}</p>
-                    {nfeData.emitente.endereco && (
-                      <p className="text-muted-foreground">{nfeData.emitente.endereco}</p>
-                    )}
-                    {(nfeData.emitente.cidade || nfeData.emitente.uf) && (
-                      <p className="text-muted-foreground">
-                        {nfeData.emitente.cidade} - {nfeData.emitente.uf}
-                      </p>
-                    )}
-                  </div>
-                </div>
+                {/* Expanded Details */}
+                {expandedIndex === index && processedFile.nfeData && (
+                  <CardContent className="space-y-6 border-t pt-6">
+                    {/* Info Geral */}
+                    <div className="grid gap-4 rounded-lg bg-muted/50 p-4 sm:grid-cols-2 lg:grid-cols-4">
+                      <div>
+                        <p className="text-xs font-medium uppercase text-muted-foreground">
+                          Numero
+                        </p>
+                        <p className="text-lg font-semibold">
+                          {processedFile.nfeData.numero || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase text-muted-foreground">
+                          Serie
+                        </p>
+                        <p className="text-lg font-semibold">
+                          {processedFile.nfeData.serie || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase text-muted-foreground">
+                          Data Emissao
+                        </p>
+                        <p className="text-lg font-semibold">
+                          {processedFile.nfeData.dataEmissao || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase text-muted-foreground">
+                          Valor Total
+                        </p>
+                        <p className="text-lg font-semibold text-primary">
+                          {formatCurrency(processedFile.nfeData.totais.valorTotal)}
+                        </p>
+                      </div>
+                    </div>
 
-                <div className="rounded-lg border p-4">
-                  <h3 className="mb-3 font-semibold text-foreground">Destinatario</h3>
-                  <div className="space-y-1 text-sm">
-                    <p className="font-medium">{nfeData.destinatario.nome || "N/A"}</p>
-                    <p className="text-muted-foreground">
-                      CPF/CNPJ: {nfeData.destinatario.cpfCnpj || "N/A"}
-                    </p>
-                    {nfeData.destinatario.endereco && (
-                      <p className="text-muted-foreground">{nfeData.destinatario.endereco}</p>
-                    )}
-                    {(nfeData.destinatario.cidade || nfeData.destinatario.uf) && (
-                      <p className="text-muted-foreground">
-                        {nfeData.destinatario.cidade} - {nfeData.destinatario.uf}
-                      </p>
-                    )}
-                    {nfeData.destinatario.email && (
-                      <p className="text-muted-foreground">{nfeData.destinatario.email}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
+                    {/* Emitente e Destinatario */}
+                    <div className="grid gap-6 md:grid-cols-2">
+                      <div className="rounded-lg border p-4">
+                        <h3 className="mb-3 font-semibold text-foreground">Emitente</h3>
+                        <div className="space-y-1 text-sm">
+                          <p className="font-medium">
+                            {processedFile.nfeData.emitente.nome || "N/A"}
+                          </p>
+                          {processedFile.nfeData.emitente.nomeFantasia && (
+                            <p className="text-muted-foreground">
+                              {processedFile.nfeData.emitente.nomeFantasia}
+                            </p>
+                          )}
+                          <p className="text-muted-foreground">
+                            CNPJ: {processedFile.nfeData.emitente.cnpj || "N/A"}
+                          </p>
+                          {processedFile.nfeData.emitente.endereco && (
+                            <p className="text-muted-foreground">
+                              {processedFile.nfeData.emitente.endereco}
+                            </p>
+                          )}
+                          {(processedFile.nfeData.emitente.cidade ||
+                            processedFile.nfeData.emitente.uf) && (
+                            <p className="text-muted-foreground">
+                              {processedFile.nfeData.emitente.cidade} -{" "}
+                              {processedFile.nfeData.emitente.uf}
+                            </p>
+                          )}
+                        </div>
+                      </div>
 
-              {/* Itens */}
-              {nfeData.itens.length > 0 && (
-                <div>
-                  <h3 className="mb-3 font-semibold text-foreground">Produtos / Servicos</h3>
-                  <div className="overflow-x-auto rounded-lg border">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted">
-                        <tr>
-                          <th className="px-4 py-3 text-left font-medium">Descricao</th>
-                          <th className="px-4 py-3 text-center font-medium">Qtd</th>
-                          <th className="px-4 py-3 text-right font-medium">V. Unit</th>
-                          <th className="px-4 py-3 text-right font-medium">V. Total</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {nfeData.itens.map((item, index) => (
-                          <tr key={index} className="hover:bg-muted/50">
-                            <td className="px-4 py-3">
-                              <p className="font-medium">{item.descricao}</p>
-                              {item.ncm && (
-                                <p className="text-xs text-muted-foreground">NCM: {item.ncm}</p>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              {item.quantidade.toFixed(2)} {item.unidade}
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              {formatCurrency(item.valorUnitario)}
-                            </td>
-                            <td className="px-4 py-3 text-right font-medium">
-                              {formatCurrency(item.valorTotal)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+                      <div className="rounded-lg border p-4">
+                        <h3 className="mb-3 font-semibold text-foreground">Destinatario</h3>
+                        <div className="space-y-1 text-sm">
+                          <p className="font-medium">
+                            {processedFile.nfeData.destinatario.nome || "N/A"}
+                          </p>
+                          <p className="text-muted-foreground">
+                            CPF/CNPJ: {processedFile.nfeData.destinatario.cpfCnpj || "N/A"}
+                          </p>
+                          {processedFile.nfeData.destinatario.endereco && (
+                            <p className="text-muted-foreground">
+                              {processedFile.nfeData.destinatario.endereco}
+                            </p>
+                          )}
+                          {(processedFile.nfeData.destinatario.cidade ||
+                            processedFile.nfeData.destinatario.uf) && (
+                            <p className="text-muted-foreground">
+                              {processedFile.nfeData.destinatario.cidade} -{" "}
+                              {processedFile.nfeData.destinatario.uf}
+                            </p>
+                          )}
+                          {processedFile.nfeData.destinatario.email && (
+                            <p className="text-muted-foreground">
+                              {processedFile.nfeData.destinatario.email}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
 
-              {/* Totais */}
-              <div className="rounded-lg border p-4">
-                <h3 className="mb-3 font-semibold text-foreground">Resumo dos Valores</h3>
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Produtos/Servicos:</span>
-                    <span className="font-medium">{formatCurrency(nfeData.totais.valorProdutos)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Desconto:</span>
-                    <span className="font-medium">{formatCurrency(nfeData.totais.valorDesconto)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Frete:</span>
-                    <span className="font-medium">{formatCurrency(nfeData.totais.valorFrete)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">ICMS:</span>
-                    <span className="font-medium">{formatCurrency(nfeData.totais.valorICMS)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">PIS:</span>
-                    <span className="font-medium">{formatCurrency(nfeData.totais.valorPIS)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">COFINS:</span>
-                    <span className="font-medium">{formatCurrency(nfeData.totais.valorCOFINS)}</span>
-                  </div>
-                </div>
-                <div className="mt-4 flex items-center justify-between border-t pt-4">
-                  <span className="text-lg font-semibold">Valor Total:</span>
-                  <span className="text-2xl font-bold text-primary">
-                    {formatCurrency(nfeData.totais.valorTotal)}
-                  </span>
-                </div>
-              </div>
+                    {/* Itens */}
+                    {processedFile.nfeData.itens.length > 0 && (
+                      <div>
+                        <h3 className="mb-3 font-semibold text-foreground">
+                          Produtos / Servicos
+                        </h3>
+                        <div className="overflow-x-auto rounded-lg border">
+                          <table className="w-full text-sm">
+                            <thead className="bg-muted">
+                              <tr>
+                                <th className="px-4 py-3 text-left font-medium">Descricao</th>
+                                <th className="px-4 py-3 text-center font-medium">Qtd</th>
+                                <th className="px-4 py-3 text-right font-medium">V. Unit</th>
+                                <th className="px-4 py-3 text-right font-medium">V. Total</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                              {processedFile.nfeData.itens.map((item, itemIndex) => (
+                                <tr key={itemIndex} className="hover:bg-muted/50">
+                                  <td className="px-4 py-3">
+                                    <p className="font-medium">{item.descricao}</p>
+                                    {item.ncm && (
+                                      <p className="text-xs text-muted-foreground">
+                                        NCM: {item.ncm}
+                                      </p>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    {item.quantidade.toFixed(2)} {item.unidade}
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    {formatCurrency(item.valorUnitario)}
+                                  </td>
+                                  <td className="px-4 py-3 text-right font-medium">
+                                    {formatCurrency(item.valorTotal)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
 
-              {/* Chave de Acesso */}
-              {nfeData.chaveAcesso && (
-                <div className="rounded-lg bg-muted/50 p-4">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">
-                    Chave de Acesso
-                  </p>
-                  <p className="mt-1 break-all font-mono text-sm">{nfeData.chaveAcesso}</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                    {/* Totais */}
+                    <div className="rounded-lg border p-4">
+                      <h3 className="mb-3 font-semibold text-foreground">Resumo dos Valores</h3>
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Produtos/Servicos:</span>
+                          <span className="font-medium">
+                            {formatCurrency(processedFile.nfeData.totais.valorProdutos)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Desconto:</span>
+                          <span className="font-medium">
+                            {formatCurrency(processedFile.nfeData.totais.valorDesconto)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Frete:</span>
+                          <span className="font-medium">
+                            {formatCurrency(processedFile.nfeData.totais.valorFrete)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">ICMS:</span>
+                          <span className="font-medium">
+                            {formatCurrency(processedFile.nfeData.totais.valorICMS)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">PIS:</span>
+                          <span className="font-medium">
+                            {formatCurrency(processedFile.nfeData.totais.valorPIS)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">COFINS:</span>
+                          <span className="font-medium">
+                            {formatCurrency(processedFile.nfeData.totais.valorCOFINS)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex items-center justify-between border-t pt-4">
+                        <span className="text-lg font-semibold">Valor Total:</span>
+                        <span className="text-2xl font-bold text-primary">
+                          {formatCurrency(processedFile.nfeData.totais.valorTotal)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Chave de Acesso */}
+                    {processedFile.nfeData.chaveAcesso && (
+                      <div className="rounded-lg bg-muted/50 p-4">
+                        <p className="text-xs font-medium uppercase text-muted-foreground">
+                          Chave de Acesso
+                        </p>
+                        <p className="mt-1 break-all font-mono text-sm">
+                          {processedFile.nfeData.chaveAcesso}
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                )}
+              </Card>
+            ))}
+          </div>
         )}
       </div>
     </div>
