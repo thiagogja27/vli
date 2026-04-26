@@ -21,75 +21,99 @@ import JSZip from "jszip"
 
 interface ProcessedFile {
   fileName: string
+  originalPath: string
+  xmlContent: string
   nfeData: NFEData | null
   error: string | null
 }
 
 export function XMLConverter() {
   const [files, setFiles] = useState<ProcessedFile[]>([])
+  const [otherZipFiles, setOtherZipFiles] = useState<{ path: string; content: Blob }[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
 
   const processXMLContent = async (
     fileName: string,
+    originalPath: string,
     content: string
   ): Promise<ProcessedFile> => {
     try {
       const data = parseNFE(content)
-      return { fileName, nfeData: data, error: null }
+      return { fileName, originalPath, xmlContent: content, nfeData: data, error: null }
     } catch (err) {
       console.error(`Erro ao processar ${fileName}:`, err)
-      return { fileName, nfeData: null, error: "Erro ao processar arquivo XML" }
+      return { fileName, originalPath, xmlContent: content, nfeData: null, error: "Erro ao processar arquivo XML" }
     }
   }
 
-  const processZipFile = async (zipFile: File): Promise<ProcessedFile[]> => {
+  interface ZipFileData {
+    files: ProcessedFile[]
+    otherFiles: { path: string; content: Blob }[]
+  }
+
+  const processZipFile = async (zipFile: File): Promise<ZipFileData> => {
     const zip = new JSZip()
     const contents = await zip.loadAsync(zipFile)
     const results: ProcessedFile[] = []
+    const otherFiles: { path: string; content: Blob }[] = []
 
-    const xmlFiles = Object.keys(contents.files).filter(
-      (name) => name.toLowerCase().endsWith(".xml") && !contents.files[name].dir
+    const allFiles = Object.keys(contents.files).filter(
+      (name) => !contents.files[name].dir
     )
 
-    for (const fileName of xmlFiles) {
-      const fileContent = await contents.files[fileName].async("string")
-      const result = await processXMLContent(fileName, fileContent)
-      results.push(result)
+    for (const filePath of allFiles) {
+      const fileName = filePath.split("/").pop() || filePath
+      
+      if (filePath.toLowerCase().endsWith(".xml")) {
+        const fileContent = await contents.files[filePath].async("string")
+        const result = await processXMLContent(fileName, filePath, fileContent)
+        results.push(result)
+      } else {
+        const content = await contents.files[filePath].async("blob")
+        otherFiles.push({ path: filePath, content })
+      }
     }
 
-    return results
+    return { files: results, otherFiles }
   }
 
   const processFiles = useCallback(async (selectedFiles: FileList) => {
     setIsProcessing(true)
     setFiles([])
+    setOtherZipFiles([])
     setExpandedIndex(null)
 
     const results: ProcessedFile[] = []
+    const allOtherFiles: { path: string; content: Blob }[] = []
 
     for (const file of Array.from(selectedFiles)) {
       const fileName = file.name.toLowerCase()
 
       if (fileName.endsWith(".zip")) {
         try {
-          const zipResults = await processZipFile(file)
-          results.push(...zipResults)
+          const zipData = await processZipFile(file)
+          results.push(...zipData.files)
+          allOtherFiles.push(...zipData.otherFiles)
         } catch {
           results.push({
             fileName: file.name,
+            originalPath: file.name,
+            xmlContent: "",
             nfeData: null,
             error: "Erro ao extrair arquivo ZIP",
           })
         }
       } else if (fileName.endsWith(".xml")) {
         const content = await file.text()
-        const result = await processXMLContent(file.name, content)
+        const result = await processXMLContent(file.name, file.name, content)
         results.push(result)
       } else {
         results.push({
           fileName: file.name,
+          originalPath: file.name,
+          xmlContent: "",
           nfeData: null,
           error: "Formato nao suportado. Use XML ou ZIP.",
         })
@@ -97,6 +121,7 @@ export function XMLConverter() {
     }
 
     setFiles(results)
+    setOtherZipFiles(allOtherFiles)
     setIsProcessing(false)
 
     if (results.length === 1 && results[0].nfeData) {
@@ -146,34 +171,51 @@ export function XMLConverter() {
     const successfulFiles = files.filter((f) => f.nfeData !== null)
     if (successfulFiles.length === 0) return
 
-    if (successfulFiles.length === 1) {
+    if (successfulFiles.length === 1 && otherZipFiles.length === 0) {
       handleDownloadPDF(successfulFiles[0])
       return
     }
 
     const zip = new JSZip()
 
-    for (const file of successfulFiles) {
+    // Adiciona os arquivos XML originais e PDFs convertidos
+    for (const file of files) {
+      // Determina a pasta base do arquivo
+      const pathParts = file.originalPath.split("/")
+      const folderPath = pathParts.length > 1 ? pathParts.slice(0, -1).join("/") + "/" : ""
+      
+      // Adiciona o XML original
+      if (file.xmlContent) {
+        zip.file(file.originalPath, file.xmlContent)
+      }
+
+      // Adiciona o PDF convertido na mesma pasta
       if (file.nfeData) {
         const doc = generatePDF(file.nfeData)
         const pdfBlob = doc.output("blob")
         const baseName = file.fileName.replace(/\.xml$/i, "")
-        const pdfName = `NF_${file.nfeData.numero || baseName}.pdf`
+        const pdfName = `${folderPath}NF_${file.nfeData.numero || baseName}.pdf`
         zip.file(pdfName, pdfBlob)
       }
+    }
+
+    // Adiciona outros arquivos do ZIP original (imagens, PDFs existentes, etc.)
+    for (const otherFile of otherZipFiles) {
+      zip.file(otherFile.path, otherFile.content)
     }
 
     const zipBlob = await zip.generateAsync({ type: "blob" })
     const url = URL.createObjectURL(zipBlob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `notas_fiscais_${Date.now()}.zip`
+    a.download = `notas_fiscais_convertidas_${Date.now()}.zip`
     a.click()
     URL.revokeObjectURL(url)
   }
 
   const handleClear = () => {
     setFiles([])
+    setOtherZipFiles([])
     setExpandedIndex(null)
   }
 
