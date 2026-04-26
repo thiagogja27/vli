@@ -321,7 +321,7 @@ export function XMLConverter() {
                                 ? "NFS-e"
                                 : "Nota Fiscal"}{" "}
                             - Numero: {processedFile.nfeData.numero || "N/A"} -{" "}
-                            {formatCurrency(processedFile.nfeData.totais.valorTotal)}
+                            {formatCurrency(processedFile.nfeData.impostos.valorTotal)}
                           </CardDescription>
                         ) : null}
                       </div>
@@ -386,7 +386,7 @@ export function XMLConverter() {
                           Valor Total
                         </p>
                         <p className="text-lg font-semibold text-primary">
-                          {formatCurrency(processedFile.nfeData.totais.valorTotal)}
+                          {formatCurrency(processedFile.nfeData.impostos.valorTotal)}
                         </p>
                       </div>
                     </div>
@@ -503,44 +503,44 @@ export function XMLConverter() {
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Produtos/Servicos:</span>
                           <span className="font-medium">
-                            {formatCurrency(processedFile.nfeData.totais.valorProdutos)}
+                            {formatCurrency(processedFile.nfeData.impostos.valorProdutos)}
                           </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Desconto:</span>
                           <span className="font-medium">
-                            {formatCurrency(processedFile.nfeData.totais.valorDesconto)}
+                            {formatCurrency(processedFile.nfeData.impostos.desconto)}
                           </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Frete:</span>
                           <span className="font-medium">
-                            {formatCurrency(processedFile.nfeData.totais.valorFrete)}
+                            {formatCurrency(processedFile.nfeData.impostos.valorFrete)}
                           </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">ICMS:</span>
                           <span className="font-medium">
-                            {formatCurrency(processedFile.nfeData.totais.valorICMS)}
+                            {formatCurrency(processedFile.nfeData.impostos.valorICMS)}
                           </span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-muted-foreground">PIS:</span>
+                          <span className="text-muted-foreground">IPI:</span>
                           <span className="font-medium">
-                            {formatCurrency(processedFile.nfeData.totais.valorPIS)}
+                            {formatCurrency(processedFile.nfeData.impostos.valorIPI)}
                           </span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-muted-foreground">COFINS:</span>
+                          <span className="text-muted-foreground">Outras Desp.:</span>
                           <span className="font-medium">
-                            {formatCurrency(processedFile.nfeData.totais.valorCOFINS)}
+                            {formatCurrency(processedFile.nfeData.impostos.outrasDesp)}
                           </span>
                         </div>
                       </div>
                       <div className="mt-4 flex items-center justify-between border-t pt-4">
                         <span className="text-lg font-semibold">Valor Total:</span>
                         <span className="text-2xl font-bold text-primary">
-                          {formatCurrency(processedFile.nfeData.totais.valorTotal)}
+                          {formatCurrency(processedFile.nfeData.impostos.valorTotal)}
                         </span>
                       </div>
                     </div>
