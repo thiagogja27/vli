@@ -178,46 +178,32 @@ export function XMLConverter() {
 
     const zip = new JSZip()
 
-    console.log("[v0] Iniciando geracao do ZIP")
-    console.log("[v0] Total de arquivos XML:", files.length)
-    console.log("[v0] Total de outros arquivos:", otherZipFiles.length)
-
     // Adiciona os arquivos XML originais e PDFs convertidos
     for (const file of files) {
-      // Determina a pasta base do arquivo
-      const pathParts = file.originalPath.split("/")
-      const folderPath = pathParts.length > 1 ? pathParts.slice(0, -1).join("/") + "/" : ""
-      
-      console.log("[v0] Processando arquivo:", file.originalPath)
-      console.log("[v0] Pasta destino:", folderPath || "(raiz)")
+      // Determina a pasta base do arquivo (diretorio onde o XML esta)
+      const lastSlashIndex = file.originalPath.lastIndexOf("/")
+      const folderPath = lastSlashIndex > -1 ? file.originalPath.substring(0, lastSlashIndex + 1) : ""
       
       // Adiciona o XML original
       if (file.xmlContent) {
         zip.file(file.originalPath, file.xmlContent)
-        console.log("[v0] XML adicionado:", file.originalPath)
       }
 
-      // Adiciona o PDF convertido na mesma pasta
+      // Adiciona o PDF convertido na mesma pasta do XML
       if (file.nfeData) {
         const doc = generatePDF(file.nfeData)
         const pdfBlob = doc.output("blob")
-        const baseName = file.fileName.replace(/\.xml$/i, "")
-        const pdfName = `${folderPath}NF_${file.nfeData.numero || baseName}.pdf`
+        const pdfName = `${folderPath}${file.nfeData.numero || file.fileName.replace(/\.xml$/i, "")}.pdf`
         zip.file(pdfName, pdfBlob)
-        console.log("[v0] PDF adicionado:", pdfName, "Tamanho:", pdfBlob.size)
-      } else {
-        console.log("[v0] Sem nfeData para:", file.fileName)
       }
     }
 
     // Adiciona outros arquivos do ZIP original (imagens, PDFs existentes, etc.)
     for (const otherFile of otherZipFiles) {
       zip.file(otherFile.path, otherFile.content)
-      console.log("[v0] Outro arquivo adicionado:", otherFile.path)
     }
 
     const zipBlob = await zip.generateAsync({ type: "blob" })
-    console.log("[v0] ZIP gerado. Tamanho:", zipBlob.size)
     
     const url = URL.createObjectURL(zipBlob)
     const a = document.createElement("a")
