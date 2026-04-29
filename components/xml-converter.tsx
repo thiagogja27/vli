@@ -184,6 +184,10 @@ export function XMLConverter() {
       const lastSlashIndex = file.originalPath.lastIndexOf("/")
       const folderPath = lastSlashIndex > -1 ? file.originalPath.substring(0, lastSlashIndex + 1) : ""
       
+      console.log("[v0] originalPath:", file.originalPath)
+      console.log("[v0] lastSlashIndex:", lastSlashIndex)
+      console.log("[v0] folderPath:", folderPath)
+      
       // Adiciona o XML original
       if (file.xmlContent) {
         zip.file(file.originalPath, file.xmlContent)
@@ -194,6 +198,7 @@ export function XMLConverter() {
         const doc = generatePDF(file.nfeData)
         const pdfBlob = doc.output("blob")
         const pdfName = `${folderPath}${file.nfeData.numero || file.fileName.replace(/\.xml$/i, "")}.pdf`
+        console.log("[v0] pdfName:", pdfName)
         zip.file(pdfName, pdfBlob)
       }
     }
