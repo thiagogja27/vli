@@ -167,6 +167,8 @@ export function XMLConverter() {
     doc.save(fileName)
   }
 
+  const [isDownloading, setIsDownloading] = useState(false)
+
   const handleDownloadAllPDFs = async () => {
     const successfulFiles = files.filter((f) => f.nfeData !== null)
     if (successfulFiles.length === 0) return
@@ -176,46 +178,54 @@ export function XMLConverter() {
       return
     }
 
-    const zip = new JSZip()
+    setIsDownloading(true)
 
-    // Adiciona os arquivos XML originais e PDFs convertidos
-    for (const file of files) {
-      // Determina a pasta base do arquivo (diretorio onde o XML esta)
-      const lastSlashIndex = file.originalPath.lastIndexOf("/")
-      const folderPath = lastSlashIndex > -1 ? file.originalPath.substring(0, lastSlashIndex + 1) : ""
-      
-      console.log("[v0] originalPath:", file.originalPath)
-      console.log("[v0] lastSlashIndex:", lastSlashIndex)
-      console.log("[v0] folderPath:", folderPath)
-      
-      // Adiciona o XML original
-      if (file.xmlContent) {
-        zip.file(file.originalPath, file.xmlContent)
+    try {
+      const zip = new JSZip()
+
+      // Adiciona os arquivos XML originais e PDFs convertidos
+      for (const file of files) {
+        // Determina a pasta base do arquivo (diretorio onde o XML esta)
+        const lastSlashIndex = file.originalPath.lastIndexOf("/")
+        const folderPath = lastSlashIndex > -1 ? file.originalPath.substring(0, lastSlashIndex + 1) : ""
+        
+        // Adiciona o XML original
+        if (file.xmlContent) {
+          zip.file(file.originalPath, file.xmlContent)
+        }
+
+        // Adiciona o PDF convertido na mesma pasta do XML
+        if (file.nfeData) {
+          try {
+            const doc = generatePDF(file.nfeData)
+            const pdfBlob = doc.output("blob")
+            const pdfName = `${folderPath}${file.nfeData.numero || file.fileName.replace(/\.xml$/i, "")}.pdf`
+            zip.file(pdfName, pdfBlob)
+          } catch (pdfErr) {
+            console.error("[v0] Erro ao gerar PDF para:", file.fileName, pdfErr)
+          }
+        }
       }
 
-      // Adiciona o PDF convertido na mesma pasta do XML
-      if (file.nfeData) {
-        const doc = generatePDF(file.nfeData)
-        const pdfBlob = doc.output("blob")
-        const pdfName = `${folderPath}${file.nfeData.numero || file.fileName.replace(/\.xml$/i, "")}.pdf`
-        console.log("[v0] pdfName:", pdfName)
-        zip.file(pdfName, pdfBlob)
+      // Adiciona outros arquivos do ZIP original (imagens, PDFs existentes, etc.)
+      for (const otherFile of otherZipFiles) {
+        zip.file(otherFile.path, otherFile.content)
       }
-    }
 
-    // Adiciona outros arquivos do ZIP original (imagens, PDFs existentes, etc.)
-    for (const otherFile of otherZipFiles) {
-      zip.file(otherFile.path, otherFile.content)
+      const zipBlob = await zip.generateAsync({ type: "blob" })
+      
+      const url = URL.createObjectURL(zipBlob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `notas_fiscais_convertidas_${Date.now()}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error("[v0] Erro ao gerar ZIP:", err)
+      alert("Erro ao gerar o arquivo ZIP. Verifique o console para mais detalhes.")
+    } finally {
+      setIsDownloading(false)
     }
-
-    const zipBlob = await zip.generateAsync({ type: "blob" })
-    
-    const url = URL.createObjectURL(zipBlob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `notas_fiscais_convertidas_${Date.now()}.zip`
-    a.click()
-    URL.revokeObjectURL(url)
   }
 
   const handleClear = () => {
@@ -317,11 +327,20 @@ export function XMLConverter() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {successCount > 0 && (
-                    <Button onClick={handleDownloadAllPDFs} size="sm" className="gap-2">
-                      <Download className="h-4 w-4" />
-                      Baixar {successCount > 1 ? `Todos (${successCount})` : "PDF"}
-                    </Button>
+{successCount > 0 && (
+<Button onClick={handleDownloadAllPDFs} size="sm" className="gap-2" disabled={isDownloading}>
+  {isDownloading ? (
+    <>
+      <Loader2 className="h-4 w-4 animate-spin" />
+      Gerando...
+    </>
+  ) : (
+    <>
+      <Download className="h-4 w-4" />
+      Baixar {successCount > 1 ? `Todos (${successCount})` : "PDF"}
+    </>
+  )}
+  </Button>
                   )}
                   <Button onClick={handleClear} variant="outline" size="sm">
                     <X className="h-4 w-4" />
