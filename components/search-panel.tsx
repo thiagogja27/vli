@@ -1,0 +1,261 @@
+"use client"
+
+import { useState, useMemo } from "react"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { type NFEData } from "@/lib/nfe-parser"
+import { Search, FileText } from "lucide-react"
+
+interface SearchPanelProps {
+  files: Array<{
+    fileName: string
+    nfeData: NFEData | null
+  }>
+  onSelectFile?: (index: number) => void
+}
+
+interface SearchResult {
+  fileIndex: number
+  fileName: string
+  nfeNumero: string
+  field: string
+  matchedText: string
+  contextWords: string[]
+}
+
+export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
+  const [searchTerm, setSearchTerm] = useState("")
+  const [searchMode, setSearchMode] = useState<"exact" | "context">("exact")
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [hasSearched, setHasSearched] = useState(false)
+
+  // Cria um índice de texto pesquisável para cada nota
+  const searchableContent = useMemo(() => {
+    return files.map((file, index) => {
+      if (!file.nfeData) return { index, fileName: file.fileName, fields: [] }
+
+      const nfe = file.nfeData
+      const fields: { name: string; value: string }[] = []
+
+      // Campos principais
+      fields.push({ name: "Numero", value: nfe.numero })
+      fields.push({ name: "Serie", value: nfe.serie })
+      fields.push({ name: "Chave de Acesso", value: nfe.chaveAcesso })
+      fields.push({ name: "Natureza da Operacao", value: nfe.naturezaOperacao })
+
+      // Emitente
+      fields.push({ name: "Emitente - Nome", value: nfe.emitente.nome })
+      fields.push({ name: "Emitente - CNPJ", value: nfe.emitente.cnpj })
+      fields.push({ name: "Emitente - Cidade", value: nfe.emitente.cidade })
+
+      // Destinatário
+      fields.push({ name: "Destinatario - Nome", value: nfe.destinatario.nome })
+      fields.push({ name: "Destinatario - CNPJ", value: nfe.destinatario.cpfCnpj })
+      fields.push({ name: "Destinatario - Cidade", value: nfe.destinatario.cidade })
+
+      // Transportador
+      fields.push({ name: "Transportador - Nome", value: nfe.transportador.nome })
+      fields.push({ name: "Transportador - Placa", value: nfe.transportador.placaVeiculo })
+
+      // Campos extraídos
+      fields.push({ name: "Terminal de Entrega", value: nfe.terminalEntrega })
+      fields.push({ name: "Transbordo", value: nfe.transbordo })
+      fields.push({ name: "Retirada", value: nfe.retirada })
+      fields.push({ name: "Tipo de Produto", value: nfe.tipoProduto })
+
+      // Produtos
+      nfe.itens.forEach((item, i) => {
+        fields.push({ name: `Produto ${i + 1} - Descricao`, value: item.descricao })
+        fields.push({ name: `Produto ${i + 1} - NCM`, value: item.ncm })
+        fields.push({ name: `Produto ${i + 1} - Codigo`, value: item.codigo })
+      })
+
+      // Informações complementares
+      fields.push({ name: "Informacoes Complementares", value: nfe.informacoesComplementares })
+
+      return {
+        index,
+        fileName: file.fileName,
+        nfeNumero: nfe.numero,
+        fields: fields.filter((f) => f.value && f.value.trim() !== ""),
+      }
+    })
+  }, [files])
+
+  const handleSearch = () => {
+    if (!searchTerm.trim()) {
+      setResults([])
+      setHasSearched(true)
+      return
+    }
+
+    const term = searchTerm.toUpperCase()
+    const found: SearchResult[] = []
+
+    searchableContent.forEach((content) => {
+      if (content.fields.length === 0) return
+
+      content.fields.forEach((field) => {
+        const value = field.value.toUpperCase()
+
+        if (searchMode === "exact") {
+          // Pesquisa por palavra exata
+          if (value.includes(term)) {
+            found.push({
+              fileIndex: content.index,
+              fileName: content.fileName,
+              nfeNumero: content.nfeNumero || "N/A",
+              field: field.name,
+              matchedText: field.value,
+              contextWords: [],
+            })
+          }
+        } else {
+          // Pesquisa por contexto - encontra a palavra e mostra as 5 seguintes
+          const words = value.split(/\s+/)
+          const termIndex = words.findIndex((w) => w.includes(term))
+
+          if (termIndex !== -1) {
+            const originalWords = field.value.split(/\s+/)
+            const contextWords = originalWords.slice(termIndex, termIndex + 6)
+            found.push({
+              fileIndex: content.index,
+              fileName: content.fileName,
+              nfeNumero: content.nfeNumero || "N/A",
+              field: field.name,
+              matchedText: originalWords[termIndex],
+              contextWords,
+            })
+          }
+        }
+      })
+    })
+
+    setResults(found)
+    setHasSearched(true)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleSearch()
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Search className="h-5 w-5" />
+          Pesquisa nas Notas
+        </CardTitle>
+        <CardDescription>
+          Pesquise por palavra exata ou por contexto (mostra as 5 palavras seguintes)
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row">
+          <div className="flex-1">
+            <Input
+              placeholder="Digite o termo de pesquisa..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant={searchMode === "exact" ? "default" : "outline"}
+              onClick={() => setSearchMode("exact")}
+              size="sm"
+            >
+              Exata
+            </Button>
+            <Button
+              variant={searchMode === "context" ? "default" : "outline"}
+              onClick={() => setSearchMode("context")}
+              size="sm"
+            >
+              Contexto
+            </Button>
+          </div>
+          <Button onClick={handleSearch}>
+            <Search className="mr-2 h-4 w-4" />
+            Pesquisar
+          </Button>
+        </div>
+
+        {hasSearched && (
+          <div className="mt-4">
+            {results.length === 0 ? (
+              <p className="text-center text-sm text-muted-foreground">
+                Nenhum resultado encontrado para &quot;{searchTerm}&quot;
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  {results.length} resultado{results.length !== 1 && "s"} encontrado{results.length !== 1 && "s"}
+                </p>
+                <div className="max-h-[400px] space-y-2 overflow-y-auto">
+                  {results.map((result, i) => (
+                    <div
+                      key={i}
+                      className="cursor-pointer rounded-lg border p-3 transition-colors hover:bg-muted/50"
+                      onClick={() => onSelectFile?.(result.fileIndex)}
+                    >
+                      <div className="flex items-start gap-2">
+                        <FileText className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{result.fileName}</span>
+                            <span className="text-xs text-muted-foreground">
+                              NF {result.nfeNumero}
+                            </span>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{result.field}</p>
+                          {searchMode === "exact" ? (
+                            <p className="mt-1 break-words text-sm">
+                              {highlightText(result.matchedText, searchTerm)}
+                            </p>
+                          ) : (
+                            <p className="mt-1 break-words text-sm">
+                              <span className="font-semibold text-primary">
+                                {result.contextWords[0]}
+                              </span>{" "}
+                              {result.contextWords.slice(1).join(" ")}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function highlightText(text: string, term: string) {
+  if (!term) return text
+
+  const parts = text.split(new RegExp(`(${escapeRegExp(term)})`, "gi"))
+
+  return parts.map((part, i) =>
+    part.toUpperCase() === term.toUpperCase() ? (
+      <span key={i} className="bg-yellow-200 font-semibold text-yellow-900">
+        {part}
+      </span>
+    ) : (
+      part
+    )
+  )
+}
+
+function escapeRegExp(string: string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}

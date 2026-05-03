@@ -3,8 +3,11 @@
 import { useState, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { parseNFE, type NFEData } from "@/lib/nfe-parser"
 import { generatePDF } from "@/lib/pdf-generator"
+import { Dashboard } from "@/components/dashboard"
+import { SearchPanel } from "@/components/search-panel"
 import {
   FileText,
   Upload,
@@ -16,6 +19,12 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
+  BarChart3,
+  Search,
+  List,
+  MapPin,
+  Truck,
+  Package,
 } from "lucide-react"
 import JSZip from "jszip"
 
@@ -33,6 +42,7 @@ export function XMLConverter() {
   const [isDragOver, setIsDragOver] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
+  const [activeTab, setActiveTab] = useState<string>("list")
 
   const processXMLContent = async (
     fileName: string,
@@ -353,8 +363,24 @@ export function XMLConverter() {
 
         {/* File List */}
         {files.length > 0 && (
-          <div className="space-y-4">
-            {files.map((processedFile, index) => (
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="mb-4 grid w-full grid-cols-3">
+              <TabsTrigger value="list" className="gap-2">
+                <List className="h-4 w-4" />
+                Lista
+              </TabsTrigger>
+              <TabsTrigger value="dashboard" className="gap-2">
+                <BarChart3 className="h-4 w-4" />
+                Dashboard
+              </TabsTrigger>
+              <TabsTrigger value="search" className="gap-2">
+                <Search className="h-4 w-4" />
+                Pesquisa
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="list" className="space-y-4">
+          {files.map((processedFile, index) => (
               <Card
                 key={index}
                 className={processedFile.error ? "border-destructive/50" : ""}
@@ -456,6 +482,62 @@ export function XMLConverter() {
                         </p>
                       </div>
                     </div>
+
+                    {/* Informações Logísticas */}
+                    {(processedFile.nfeData.terminalEntrega || processedFile.nfeData.transbordo || processedFile.nfeData.retirada || processedFile.nfeData.tipoProduto !== "OUTRO") && (
+                      <div className="grid gap-4 rounded-lg border border-blue-200 bg-blue-50/50 p-4 dark:border-blue-900 dark:bg-blue-950/20 sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="flex items-start gap-2">
+                          <Package className="mt-0.5 h-4 w-4 text-blue-600" />
+                          <div>
+                            <p className="text-xs font-medium uppercase text-muted-foreground">
+                              Produto
+                            </p>
+                            <p className="font-semibold">
+                              {processedFile.nfeData.tipoProduto === "OUTRO" ? "Outro" : processedFile.nfeData.tipoProduto}
+                            </p>
+                          </div>
+                        </div>
+                        {processedFile.nfeData.terminalEntrega && (
+                          <div className="flex items-start gap-2">
+                            <MapPin className="mt-0.5 h-4 w-4 text-green-600" />
+                            <div>
+                              <p className="text-xs font-medium uppercase text-muted-foreground">
+                                Terminal Entrega
+                              </p>
+                              <p className="font-semibold text-sm">
+                                {processedFile.nfeData.terminalEntrega}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        {processedFile.nfeData.transbordo && (
+                          <div className="flex items-start gap-2">
+                            <Truck className="mt-0.5 h-4 w-4 text-orange-600" />
+                            <div>
+                              <p className="text-xs font-medium uppercase text-muted-foreground">
+                                Transbordo
+                              </p>
+                              <p className="font-semibold text-sm">
+                                {processedFile.nfeData.transbordo}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        {processedFile.nfeData.retirada && (
+                          <div className="flex items-start gap-2">
+                            <FileArchive className="mt-0.5 h-4 w-4 text-purple-600" />
+                            <div>
+                              <p className="text-xs font-medium uppercase text-muted-foreground">
+                                Retirada
+                              </p>
+                              <p className="font-semibold text-sm">
+                                {processedFile.nfeData.retirada}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Emitente e Destinatario */}
                     <div className="grid gap-6 md:grid-cols-2">
@@ -626,7 +708,22 @@ export function XMLConverter() {
                 )}
               </Card>
             ))}
-          </div>
+            </TabsContent>
+
+            <TabsContent value="dashboard">
+              <Dashboard files={files} />
+            </TabsContent>
+
+            <TabsContent value="search">
+              <SearchPanel 
+                files={files} 
+                onSelectFile={(index) => {
+                  setActiveTab("list")
+                  setExpandedIndex(index)
+                }}
+              />
+            </TabsContent>
+          </Tabs>
         )}
       </div>
     </div>

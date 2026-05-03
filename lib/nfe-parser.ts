@@ -12,6 +12,11 @@ export interface NFEData {
   naturezaOperacao: string
   tipoOperacao: "0" | "1" // 0 = entrada, 1 = saída
   folha: string
+  // Campos extraídos das informações complementares
+  terminalEntrega: string
+  transbordo: string
+  retirada: string
+  tipoProduto: "SOJA" | "MILHO" | "ACUCAR" | "OUTRO"
   // Emitente
   emitente: {
     cnpj: string
@@ -228,23 +233,34 @@ function parseNFeData(doc: Document, tipo: "NFe" | "NFSe" | "Desconhecido"): NFE
   }
 
   // Data e hora
-  const dhEmi = getTextContent(doc, "dhEmi", ide) || getTextContent(doc, "dEmi", ide)
+const dhEmi = getTextContent(doc, "dhEmi", ide) || getTextContent(doc, "dEmi", ide)
   const dhSaiEnt = getTextContent(doc, "dhSaiEnt", ide) || getTextContent(doc, "dSaiEnt", ide)
   
+  // Extrair informações complementares para análise
+  const informacoesComplementares = infAdic ? getTextContent(doc, "infCpl", infAdic as Element) : ""
+  
+  // Detectar tipo de produto baseado na descrição dos itens
+  const descricaoProdutos = itens.map(i => i.descricao).join(" ")
+  
   return {
-    tipo,
-    numero: getTextContent(doc, "nNF", ide),
-    serie: getTextContent(doc, "serie", ide),
-    dataEmissao: formatDate(dhEmi),
-    horaEmissao: formatTime(dhEmi),
-    dataEntradaSaida: formatDate(dhSaiEnt),
-    horaEntradaSaida: formatTime(dhSaiEnt) || formatTime(getTextContent(doc, "hSaiEnt", ide)),
-    chaveAcesso: protNFe ? getTextContent(doc, "chNFe", protNFe as Element) : getTextContent(doc, "Id").replace("NFe", ""),
-    protocolo: protNFe ? getTextContent(doc, "nProt", protNFe as Element) : "",
-    naturezaOperacao: getTextContent(doc, "natOp", ide),
-    tipoOperacao: (getTextContent(doc, "tpNF", ide) as "0" | "1") || "1",
-    folha: "1/1",
-    emitente: {
+  tipo,
+  numero: getTextContent(doc, "nNF", ide),
+  serie: getTextContent(doc, "serie", ide),
+  dataEmissao: formatDate(dhEmi),
+  horaEmissao: formatTime(dhEmi),
+  dataEntradaSaida: formatDate(dhSaiEnt),
+  horaEntradaSaida: formatTime(dhSaiEnt) || formatTime(getTextContent(doc, "hSaiEnt", ide)),
+  chaveAcesso: protNFe ? getTextContent(doc, "chNFe", protNFe as Element) : getTextContent(doc, "Id").replace("NFe", ""),
+  protocolo: protNFe ? getTextContent(doc, "nProt", protNFe as Element) : "",
+  naturezaOperacao: getTextContent(doc, "natOp", ide),
+  tipoOperacao: (getTextContent(doc, "tpNF", ide) as "0" | "1") || "1",
+  folha: "1/1",
+  // Campos extraídos das informações complementares
+  terminalEntrega: extractTerminalEntrega(informacoesComplementares),
+  transbordo: extractTransbordo(informacoesComplementares),
+  retirada: extractRetirada(informacoesComplementares),
+  tipoProduto: detectTipoProduto(descricaoProdutos, informacoesComplementares),
+  emitente: {
       cnpj: formatCNPJ(getTextContent(doc, "CNPJ", emit)),
       nome: getTextContent(doc, "xNome", emit),
       nomeFantasia: getTextContent(doc, "xFant", emit),
@@ -343,12 +359,16 @@ function parseNFSeData(doc: Document, tipo: "NFe" | "NFSe" | "Desconhecido"): NF
     horaEmissao: formatTime(getTextContent(doc, "DataEmissao", infNfse)),
     dataEntradaSaida: "",
     horaEntradaSaida: "",
-    chaveAcesso: getTextContent(doc, "CodigoVerificacao", infNfse),
-    protocolo: "",
-    naturezaOperacao: "Prestacao de Servicos",
-    tipoOperacao: "1",
-    folha: "1/1",
-    emitente: {
+chaveAcesso: getTextContent(doc, "CodigoVerificacao", infNfse),
+  protocolo: "",
+  naturezaOperacao: "Prestacao de Servicos",
+  tipoOperacao: "1",
+  folha: "1/1",
+  terminalEntrega: "",
+  transbordo: "",
+  retirada: "",
+  tipoProduto: "OUTRO",
+  emitente: {
       cnpj: formatCNPJ(getTextContent(doc, "Cnpj", prestador)),
       nome: getTextContent(doc, "RazaoSocial", prestador),
       nomeFantasia: getTextContent(doc, "NomeFantasia", prestador),
@@ -451,11 +471,15 @@ function parseGenericData(doc: Document, tipo: "NFe" | "NFSe" | "Desconhecido"):
     chaveAcesso: "",
     protocolo: "",
     naturezaOperacao: "",
-    tipoOperacao: "1",
-    folha: "1/1",
-    emitente: {
-      cnpj: "",
-      nome: "",
+tipoOperacao: "1",
+  folha: "1/1",
+  terminalEntrega: "",
+  transbordo: "",
+  retirada: "",
+  tipoProduto: "OUTRO",
+  emitente: {
+  cnpj: "",
+  nome: "",
       nomeFantasia: "",
       endereco: "",
       numero: "",
@@ -575,10 +599,51 @@ function formatPhone(phone: string): string {
   if (!phone) return ""
   const cleaned = phone.replace(/\D/g, "")
   if (cleaned.length === 10) {
-    return cleaned.replace(/(\d{2})(\d{4})(\d{4})/, "($1) $2-$3")
+  return cleaned.replace(/(\d{2})(\d{4})(\d{4})/, "($1) $2-$3")
   }
   if (cleaned.length === 11) {
-    return cleaned.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3")
+  return cleaned.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3")
   }
   return phone
+  }
+
+// Funções para extrair informações das informações complementares
+function extractTerminalEntrega(infComplementares: string): string {
+  if (!infComplementares) return ""
+  // Procura por "ENTREGA:" e pega o nome do terminal
+  const match = infComplementares.match(/ENTREGA:\s*([^,]+)/i)
+  if (match) {
+    return match[1].trim()
+  }
+  return ""
+}
+
+function extractTransbordo(infComplementares: string): string {
+  if (!infComplementares) return ""
+  // Procura por "TRANSBORDO:" e pega o nome do terminal
+  const match = infComplementares.match(/TRANSBORDO:\s*([^,]+)/i)
+  if (match) {
+    return match[1].trim()
+  }
+  return ""
+}
+
+function extractRetirada(infComplementares: string): string {
+  if (!infComplementares) return ""
+  // Procura por "RETIRADA:" e pega o nome do local
+  const match = infComplementares.match(/RETIRADA:\s*([^,]+)/i)
+  if (match) {
+    return match[1].trim()
+  }
+  return ""
+}
+
+function detectTipoProduto(descricaoProduto: string, infComplementares: string): "SOJA" | "MILHO" | "ACUCAR" | "OUTRO" {
+  const texto = (descricaoProduto + " " + infComplementares).toUpperCase()
+  
+  if (texto.includes("SOJA")) return "SOJA"
+  if (texto.includes("MILHO")) return "MILHO"
+  if (texto.includes("ACUCAR") || texto.includes("AÇUCAR") || texto.includes("AÇÚCAR")) return "ACUCAR"
+  
+  return "OUTRO"
 }
