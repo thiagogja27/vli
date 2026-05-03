@@ -1,5 +1,3 @@
-import { DOMParser } from "@xmldom/xmldom"
-
 export interface NFEData {
   tipo: "NFe" | "NFSe" | "Desconhecido"
   // Identificação
