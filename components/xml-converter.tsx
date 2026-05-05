@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { parseNFE, type NFEData } from '@/lib/nfe-parser'
-import { generatePDF } from '@/lib/pdf-generator'
 import { Dashboard } from '@/components/dashboard'
 import { SearchPanel } from '@/components/search-panel'
 import {
@@ -178,13 +177,14 @@ export function XMLConverter() {
     setIsDragOver(false)
   }, [])
 
-  const handleDownloadPDF = (processedFile: ProcessedFile) => {
-    if (!processedFile.nfeData) return
+  const handleDownloadPDF = async (processedFile: ProcessedFile) => {
+    if (!processedFile.nfeData) return;
 
-    const doc = generatePDF(processedFile.nfeData)
-    const baseName = processedFile.fileName.replace(/\.xml$/i, '')
-    const fileName = `NF_${processedFile.nfeData.numero || baseName}_${Date.now()}.pdf`
-    doc.save(fileName)
+    const { generatePDF } = await import('@/lib/pdf-generator');
+    const doc = generatePDF(processedFile.nfeData);
+    const baseName = processedFile.fileName.replace(/\.xml$/i, '');
+    const fileName = `NF_${processedFile.nfeData.numero || baseName}_${Date.now()}.pdf`;
+    doc.save(fileName);
   }
 
   const [isDownloading, setIsDownloading] = useState(false)
@@ -201,6 +201,7 @@ export function XMLConverter() {
     setIsDownloading(true);
 
     try {
+      const { generatePDF } = await import('@/lib/pdf-generator');
       const zip = new JSZip();
 
       // Adiciona os arquivos XML originais e PDFs convertidos

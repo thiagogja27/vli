@@ -195,7 +195,7 @@ export function Dashboard({ files }: DashboardProps) {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          </C</CardContent>
+          </CardContent>
         </Card>
 
         {/* Grafico de Transbordos */}
