@@ -141,6 +141,21 @@ export function XMLConverter() {
     setOtherZipFiles(allOtherFiles)
     setIsProcessing(false)
 
+    if (results.some(r => r.nfeData)) { // Check if there's at least one valid NFE
+        const hasTeg = results.some(r => r.nfeData?.terminalEntrega?.toUpperCase().includes('TEG'));
+        const hasTeag = results.some(r => r.nfeData?.terminalEntrega?.toUpperCase().includes('TEAG'));
+
+        if (hasTeg && hasTeag) {
+            alert('Foram encontradas notas com os terminais TEG e TEAG.');
+        } else if (hasTeg) {
+            alert('Foram encontradas notas com o terminal TEG.');
+        } else if (hasTeag) {
+            alert('Foram encontradas notas com o terminal TEAG.');
+        } else {
+            alert('Nenhuma nota com terminal de entrega TEG ou TEAG foi encontrada.');
+        }
+    }
+
     if (results.length === 1 && results[0].nfeData) {
       setExpandedIndex(0)
     }
