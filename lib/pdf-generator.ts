@@ -175,7 +175,17 @@ export function generatePDF(data: NFEData): jsPDF {
   }
 
   // Chave de Acesso
-  drawBoxWithLabel(doc, nfBoxX, y + 15, nfBoxWidth, 11, "CHAVE DE ACESSO", formatChaveAcesso(data.chaveAcesso), 6);
+  const chaveAcessoY = y + 15;
+  const chaveAcessoH = 11;
+  drawBox(doc, nfBoxX, chaveAcessoY, nfBoxWidth, chaveAcessoH);
+  doc.setFontSize(5);
+  doc.setFont("helvetica", "normal");
+  doc.text("CHAVE DE ACESSO", nfBoxContentX, chaveAcessoY + 3);
+  doc.setFontSize(6);
+  doc.setFont("helvetica", "bold");
+  const formattedChave = formatChaveAcesso(data.chaveAcesso);
+  const chaveLines = doc.splitTextToSize(formattedChave, nfBoxContentW);
+  doc.text(chaveLines, nfBoxContentX, chaveAcessoY + 6);
 
   // Protocolo
   drawBoxWithLabel(doc, nfBoxX, y + 26, nfBoxWidth, headerHeight - 26, "PROTOCOLO DE AUTORIZACAO DE USO", data.protocolo, 6)
