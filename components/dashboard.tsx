@@ -3,6 +3,7 @@
 import { useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { type NFEData } from "@/lib/nfe-parser"
+import { Analytics } from "@vercel/analytics/react"
 import {
   BarChart,
   Bar,
@@ -80,6 +81,7 @@ export function Dashboard({ files }: DashboardProps) {
 
   return (
     <div className="space-y-6">
+      <Analytics />
       {/* Cards de resumo */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -193,7 +195,7 @@ export function Dashboard({ files }: DashboardProps) {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          </CardContent>
+          </C</CardContent>
         </Card>
 
         {/* Grafico de Transbordos */}
