@@ -647,3 +647,5 @@ function detectTipoProduto(descricaoProduto: string, infComplementares: string):
   
   return "OUTRO"
 }
+
+// Alteração para teste de deploy
