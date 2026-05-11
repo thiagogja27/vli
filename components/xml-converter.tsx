@@ -433,7 +433,9 @@ export function XMLConverter() {
                         <CheckCircle2 className='h-5 w-5 flex-shrink-0 text-green-600' />
                       )}
                       <div>
-                        <CardTitle className='text-base'>{processedFile.fileName}</CardTitle>
+                        <CardTitle className='text-base'>
+                          {processedFile.fileName} - {processedFile.nfeData?.chaveAcesso || ''}
+                        </CardTitle>
                         {processedFile.error ? (
                           <CardDescription className='text-destructive'>
                             {processedFile.error}
