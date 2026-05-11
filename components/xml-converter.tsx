@@ -24,8 +24,10 @@ import {
   MapPin,
   Truck,
   Package,
+  FileSpreadsheet, // Ícone para o Excel
 } from 'lucide-react'
 import JSZip from 'jszip'
+import * as XLSX from 'xlsx' // Importar a biblioteca xlsx
 
 interface ProcessedFile {
   fileName: string
@@ -271,6 +273,74 @@ export function XMLConverter() {
     }
   };
 
+  // Função para baixar a planilha Excel
+  const handleDownloadExcel = () => {
+    const successfulFiles = files.filter((f) => f.nfeData !== null);
+    if (successfulFiles.length === 0) return;
+
+    const dataToExport = [];
+    const headers = [
+      "Arquivo", "Chave de Acesso", "Numero NFe", "Data Emissão",
+      "Emitente Nome", "Emitente CNPJ", "Destinatário Nome", "Destinatário CNPJ",
+      "Valor Total", "Terminal de Entrega", "Transbordo", "Retirada", "Tipo Produto"
+    ];
+
+    // Adiciona os dados de cada nota
+    for (const file of successfulFiles) {
+        if (file.nfeData) {
+            dataToExport.push([
+                file.fileName,
+                file.nfeData.chaveAcesso,
+                file.nfeData.numero,
+                file.nfeData.dataEmissao,
+                file.nfeData.emitente.nome,
+                file.nfeData.emitente.cnpj,
+                file.nfeData.destinatario.nome,
+                file.nfeData.destinatario.cpfCnpj,
+                file.nfeData.impostos.valorTotal,
+                file.nfeData.terminalEntrega,
+                file.nfeData.transbordo,
+                file.nfeData.retirada,
+                file.nfeData.tipoProduto
+            ]);
+        }
+    }
+
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...dataToExport]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Notas Fiscais");
+
+    // Tenta criar uma segunda aba com os itens, se houver
+    const itemsDataToExport: any[][] = [];
+    const itemHeaders = ["Chave de Acesso", "Numero NFe", "Código Produto", "Descrição", "NCM", "CFOP", "Quantidade", "Unidade", "Valor Unitário", "Valor Total"];
+
+    for (const file of successfulFiles) {
+        if (file.nfeData && file.nfeData.itens) {
+            file.nfeData.itens.forEach(item => {
+                itemsDataToExport.push([
+                    file.nfeData!.chaveAcesso,
+                    file.nfeData!.numero,
+                    item.codigo,
+                    item.descricao,
+                    item.ncm,
+                    item.cfop,
+                    item.quantidade,
+                    item.unidade,
+                    item.valorUnitario,
+                    item.valorTotal
+                ]);
+            });
+        }
+    }
+
+    if(itemsDataToExport.length > 0) {
+        const itemsWorksheet = XLSX.utils.aoa_to_sheet([itemHeaders, ...itemsDataToExport]);
+        XLSX.utils.book_append_sheet(workbook, itemsWorksheet, "Itens das Notas");
+    }
+
+    XLSX.writeFile(workbook, `relatorio_nfe_${Date.now()}.xlsx`);
+  };
+
   const handleClear = () => {
     setFiles([])
     setOtherZipFiles([])
@@ -370,20 +440,26 @@ export function XMLConverter() {
                   )}
                 </div>
                 <div className='flex items-center gap-2'>
-{successCount > 0 && (
-<Button onClick={handleDownloadAllPDFs} size='sm' className='gap-2' disabled={isDownloading}>
-  {isDownloading ? (
-    <>
-      <Loader2 className='h-4 w-4 animate-spin' />
-      Gerando...
-    </>
-  ) : (
-    <>
-      <Download className='h-4 w-4' />
-      Baixar {successCount > 1 ? `Todos (${successCount})` : 'PDF'}
-    </>
-  )}
-  </Button>
+                {successCount > 0 && (
+                    <>
+                        <Button onClick={handleDownloadExcel} size='sm' className='gap-2'>
+                            <FileSpreadsheet className='h-4 w-4' />
+                            Excel
+                        </Button>
+                        <Button onClick={handleDownloadAllPDFs} size='sm' className='gap-2' disabled={isDownloading}>
+                        {isDownloading ? (
+                            <>
+                            <Loader2 className='h-4 w-4 animate-spin' />
+                            Gerando...
+                            </>
+                        ) : (
+                            <>
+                            <Download className='h-4 w-4' />
+                            {successCount > 1 ? `PDFs (${successCount})` : 'PDF'}
+                            </>
+                        )}
+                        </Button>
+                    </>
                   )}
                   <Button onClick={handleClear} variant='outline' size='sm'>
                     <X className='h-4 w-4' />

@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -6,13 +6,16 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { type NFEData } from "@/lib/nfe-parser"
-import { Search, FileText, Download } from "lucide-react"
+import { Search, FileText, FileSpreadsheet } from "lucide-react"
+import * as XLSX from 'xlsx'
+
+interface ProcessedFile {
+  fileName: string
+  nfeData: NFEData | null
+}
 
 interface SearchPanelProps {
-  files: Array<{
-    fileName: string
-    nfeData: NFEData | null
-  }>
+  files: Array<ProcessedFile>
   onSelectFile?: (index: number) => void
 }
 
@@ -127,33 +130,74 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
     }
   }
 
-  const handleExportCSV = () => {
-    if (results.length === 0) {
-      // Maybe show a toast message here
-      return
+  const handleDownloadExcel = () => {
+    if (results.length === 0) return;
+
+    // Garante que cada arquivo seja processado apenas uma vez
+    const uniqueFileIndexes = [...new Set(results.map(r => r.fileIndex))];
+    const filesToExport = uniqueFileIndexes.map(index => files[index]).filter(f => f.nfeData !== null);
+
+    if (filesToExport.length === 0) return;
+
+    const dataToExport = [];
+    const headers = [
+      "Arquivo", "Chave de Acesso", "Numero NFe", "Data Emissão",
+      "Emitente Nome", "Emitente CNPJ", "Destinatário Nome", "Destinatário CNPJ",
+      "Valor Total", "Terminal de Entrega", "Transbordo", "Retirada", "Tipo Produto"
+    ];
+
+    for (const file of filesToExport) {
+      if (file.nfeData) {
+        dataToExport.push([
+            file.fileName,
+            file.nfeData.chaveAcesso,
+            file.nfeData.numero,
+            file.nfeData.dataEmissao,
+            file.nfeData.emitente.nome,
+            file.nfeData.emitente.cnpj,
+            file.nfeData.destinatario.nome,
+            file.nfeData.destinatario.cpfCnpj,
+            file.nfeData.impostos.valorTotal,
+            file.nfeData.terminalEntrega,
+            file.nfeData.transbordo,
+            file.nfeData.retirada,
+            file.nfeData.tipoProduto
+        ]);
+      }
     }
 
-    const csvHeader = `"Chave de Acesso","Nome do Arquivo"\n`
-    const csvRows = results
-      .map((result) => {
-        const file = files[result.fileIndex]
-        const chaveAcesso = file.nfeData?.chaveAcesso || ""
-        return `"${chaveAcesso}","${result.fileName}"`
-      })
-      .join("\n")
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...dataToExport]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Resultados da Pesquisa");
 
-    const csvContent = csvHeader + csvRows
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-    const link = document.createElement("a")
-    if (link.href) {
-      URL.revokeObjectURL(link.href)
+    const itemsDataToExport: any[][] = [];
+    const itemHeaders = ["Chave de Acesso", "Numero NFe", "Código Produto", "Descrição", "NCM", "CFOP", "Quantidade", "Unidade", "Valor Unitário", "Valor Total"];
+
+    for (const file of filesToExport) {
+      if (file.nfeData && file.nfeData.itens) {
+        file.nfeData.itens.forEach(item => {
+            itemsDataToExport.push([
+                file.nfeData!.chaveAcesso,
+                file.nfeData!.numero,
+                item.codigo,
+                item.descricao,
+                item.ncm,
+                item.cfop,
+                item.quantidade,
+                item.unidade,
+                item.valorUnitario,
+                item.valorTotal
+            ]);
+        });
+      }
     }
-    const url = URL.createObjectURL(blob)
-    link.href = url
-    link.setAttribute("download", "export.csv")
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+
+    if(itemsDataToExport.length > 0) {
+        const itemsWorksheet = XLSX.utils.aoa_to_sheet([itemHeaders, ...itemsDataToExport]);
+        XLSX.utils.book_append_sheet(workbook, itemsWorksheet, "Itens dos Resultados");
+    }
+
+    XLSX.writeFile(workbook, `pesquisa_nfe_${Date.now()}.xlsx`);
   }
 
   return (
@@ -197,10 +241,12 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
             <Search className="mr-2 h-4 w-4" />
             Pesquisar
           </Button>
-          <Button onClick={handleExportCSV} variant="outline">
-            <Download className="mr-2 h-4 w-4" />
-            Exportar CSV
-          </Button>
+          {results.length > 0 && (
+             <Button onClick={handleDownloadExcel} variant="outline">
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Exportar Excel
+            </Button>
+          )}
         </div>
 
         {hasSearched && (
