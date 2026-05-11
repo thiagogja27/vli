@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { type NFEData } from "@/lib/nfe-parser"
-import { Search, FileText } from "lucide-react"
+import { Search, FileText, Download } from "lucide-react"
 
 interface SearchPanelProps {
   files: Array<{
@@ -31,7 +31,6 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
   const [results, setResults] = useState<SearchResult[]>([])
   const [hasSearched, setHasSearched] = useState(false)
 
-  // Cria um índice de texto pesquisável para cada nota
   const searchableContent = useMemo(() => {
     return files.map((file, index) => {
       if (!file.nfeData) return { index, fileName: file.fileName, fields: [] }
@@ -39,40 +38,27 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
       const nfe = file.nfeData
       const fields: { name: string; value: string }[] = []
 
-      // Campos principais
       fields.push({ name: "Numero", value: nfe.numero })
       fields.push({ name: "Serie", value: nfe.serie })
       fields.push({ name: "Chave de Acesso", value: nfe.chaveAcesso })
       fields.push({ name: "Natureza da Operacao", value: nfe.naturezaOperacao })
-
-      // Emitente
       fields.push({ name: "Emitente - Nome", value: nfe.emitente.nome })
       fields.push({ name: "Emitente - CNPJ", value: nfe.emitente.cnpj })
       fields.push({ name: "Emitente - Cidade", value: nfe.emitente.cidade })
-
-      // Destinatário
       fields.push({ name: "Destinatario - Nome", value: nfe.destinatario.nome })
       fields.push({ name: "Destinatario - CNPJ", value: nfe.destinatario.cpfCnpj })
       fields.push({ name: "Destinatario - Cidade", value: nfe.destinatario.cidade })
-
-      // Transportador
       fields.push({ name: "Transportador - Nome", value: nfe.transportador.nome })
       fields.push({ name: "Transportador - Placa", value: nfe.transportador.placaVeiculo })
-
-      // Campos extraídos
       fields.push({ name: "Terminal de Entrega", value: nfe.terminalEntrega })
       fields.push({ name: "Transbordo", value: nfe.transbordo })
       fields.push({ name: "Retirada", value: nfe.retirada })
       fields.push({ name: "Tipo de Produto", value: nfe.tipoProduto })
-
-      // Produtos
       nfe.itens.forEach((item, i) => {
         fields.push({ name: `Produto ${i + 1} - Descricao`, value: item.descricao })
         fields.push({ name: `Produto ${i + 1} - NCM`, value: item.ncm })
         fields.push({ name: `Produto ${i + 1} - Codigo`, value: item.codigo })
       })
-
-      // Informações complementares
       fields.push({ name: "Informacoes Complementares", value: nfe.informacoesComplementares })
 
       return {
@@ -101,7 +87,6 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
         const value = field.value.toUpperCase()
 
         if (searchMode === "exact") {
-          // Pesquisa por palavra exata
           if (value.includes(term)) {
             found.push({
               fileIndex: content.index,
@@ -113,7 +98,6 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
             })
           }
         } else {
-          // Pesquisa por contexto - encontra a palavra e mostra as 5 seguintes
           const words = value.split(/\s+/)
           const termIndex = words.findIndex((w) => w.includes(term))
 
@@ -141,6 +125,35 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
     if (e.key === "Enter") {
       handleSearch()
     }
+  }
+
+  const handleExportCSV = () => {
+    if (results.length === 0) {
+      // Maybe show a toast message here
+      return
+    }
+
+    const csvHeader = `"Chave de Acesso","Nome do Arquivo"\n`
+    const csvRows = results
+      .map((result) => {
+        const file = files[result.fileIndex]
+        const chaveAcesso = file.nfeData?.chaveAcesso || ""
+        return `"${chaveAcesso}","${result.fileName}"`
+      })
+      .join("\n")
+
+    const csvContent = csvHeader + csvRows
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const link = document.createElement("a")
+    if (link.href) {
+      URL.revokeObjectURL(link.href)
+    }
+    const url = URL.createObjectURL(blob)
+    link.href = url
+    link.setAttribute("download", "export.csv")
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
 
   return (
@@ -183,6 +196,10 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
           <Button onClick={handleSearch}>
             <Search className="mr-2 h-4 w-4" />
             Pesquisar
+          </Button>
+          <Button onClick={handleExportCSV} variant="outline">
+            <Download className="mr-2 h-4 w-4" />
+            Exportar CSV
           </Button>
         </div>
 
