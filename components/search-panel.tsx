@@ -5,6 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import { type NFEData } from "@/lib/nfe-parser"
 import { Search, FileText, FileSpreadsheet } from "lucide-react"
 import * as XLSX from 'xlsx'
@@ -33,6 +41,10 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
   const [searchMode, setSearchMode] = useState<"exact" | "context">("exact")
   const [results, setResults] = useState<SearchResult[]>([])
   const [hasSearched, setHasSearched] = useState(false)
+  
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
+  const [dataChegada, setDataChegada] = useState("")
+  const [prefixo, setPrefixo] = useState("")
 
   const searchableContent = useMemo(() => {
     return files.map((file, index) => {
@@ -130,74 +142,46 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
     }
   }
 
-  const handleDownloadExcel = () => {
-    if (results.length === 0) return;
+  const handleConfirmAndExport = () => {
+    if (results.length === 0) return
 
-    // Garante que cada arquivo seja processado apenas uma vez
-    const uniqueFileIndexes = [...new Set(results.map(r => r.fileIndex))];
-    const filesToExport = uniqueFileIndexes.map(index => files[index]).filter(f => f.nfeData !== null);
+    const uniqueFileIndexes = [...new Set(results.map(r => r.fileIndex))]
+    const filesToExport = uniqueFileIndexes.map(index => files[index]).filter(f => f.nfeData !== null)
 
-    if (filesToExport.length === 0) return;
+    if (filesToExport.length === 0) return
 
-    const dataToExport = [];
     const headers = [
-      "Arquivo", "Chave de Acesso", "Numero NFe", "Data Emissão",
-      "Emitente Nome", "Emitente CNPJ", "Destinatário Nome", "Destinatário CNPJ",
-      "Valor Total", "Terminal de Entrega", "Transbordo", "Retirada", "Tipo Produto"
-    ];
+      "DATA CHEGADA",
+      "PREFIXO",
+      "DATA DA EMISSÃO",
+      "Nº DA CHAVE DE ACESSO FORNECEDOR",
+      "CNPJ FORNECEDOR (FORMULA)",
+      "Numero DANFE (FORMULA)",
+      "Série DANFE (FORMULA)",
+    ]
 
-    for (const file of filesToExport) {
-      if (file.nfeData) {
-        dataToExport.push([
-            file.fileName,
-            file.nfeData.chaveAcesso,
-            file.nfeData.numero,
-            file.nfeData.dataEmissao,
-            file.nfeData.emitente.nome,
-            file.nfeData.emitente.cnpj,
-            file.nfeData.destinatario.nome,
-            file.nfeData.destinatario.cpfCnpj,
-            file.nfeData.impostos.valorTotal,
-            file.nfeData.terminalEntrega,
-            file.nfeData.transbordo,
-            file.nfeData.retirada,
-            file.nfeData.tipoProduto
-        ]);
-      }
-    }
+    const dataToExport = filesToExport.map((file, i) => {
+      const chaveAcessoCell = `D${i + 2}` // Coluna D (Chave de Acesso)
+      return [
+        dataChegada,
+        prefixo,
+        file.nfeData!.dataEmissao,
+        file.nfeData!.chaveAcesso,
+        { f: `=MID(${chaveAcessoCell}, 7, 14)` }, // Extrai CNPJ
+        { f: `=MID(${chaveAcessoCell}, 26, 9)` }, // Extrai Número
+        { f: `=MID(${chaveAcessoCell}, 23, 3)` }, // Extrai Série
+      ]
+    })
 
-    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...dataToExport]);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Resultados da Pesquisa");
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...dataToExport])
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Pesquisa NFE")
 
-    const itemsDataToExport: any[][] = [];
-    const itemHeaders = ["Chave de Acesso", "Numero NFe", "Código Produto", "Descrição", "NCM", "CFOP", "Quantidade", "Unidade", "Valor Unitário", "Valor Total"];
+    XLSX.writeFile(workbook, `relatorio_nfe_${Date.now()}.xlsx`)
 
-    for (const file of filesToExport) {
-      if (file.nfeData && file.nfeData.itens) {
-        file.nfeData.itens.forEach(item => {
-            itemsDataToExport.push([
-                file.nfeData!.chaveAcesso,
-                file.nfeData!.numero,
-                item.codigo,
-                item.descricao,
-                item.ncm,
-                item.cfop,
-                item.quantidade,
-                item.unidade,
-                item.valorUnitario,
-                item.valorTotal
-            ]);
-        });
-      }
-    }
-
-    if(itemsDataToExport.length > 0) {
-        const itemsWorksheet = XLSX.utils.aoa_to_sheet([itemHeaders, ...itemsDataToExport]);
-        XLSX.utils.book_append_sheet(workbook, itemsWorksheet, "Itens dos Resultados");
-    }
-
-    XLSX.writeFile(workbook, `pesquisa_nfe_${Date.now()}.xlsx`);
+    setIsExportDialogOpen(false)
+    setDataChegada("")
+    setPrefixo("")
   }
 
   return (
@@ -242,12 +226,53 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
             Pesquisar
           </Button>
           {results.length > 0 && (
-             <Button onClick={handleDownloadExcel} variant="outline">
+             <Button onClick={() => setIsExportDialogOpen(true)} variant="outline">
                 <FileSpreadsheet className="mr-2 h-4 w-4" />
                 Exportar Excel
             </Button>
           )}
         </div>
+
+        {/* Dialog para inserir dados da exportação */}
+        <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Exportar Relatório</DialogTitle>
+              <DialogDescription>
+                Preencha os campos abaixo para incluí-los no relatório.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="data-chegada" className="text-right">
+                  DATA CHEGADA
+                </Label>
+                <Input
+                  id="data-chegada"
+                  value={dataChegada}
+                  onChange={(e) => setDataChegada(e.target.value)}
+                  className="col-span-3"
+                  placeholder="DD/MM/AAAA"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="prefixo" className="text-right">
+                  PREFIXO
+                </Label>
+                <Input
+                  id="prefixo"
+                  value={prefixo}
+                  onChange={(e) => setPrefixo(e.target.value)}
+                  className="col-span-3"
+                  placeholder="Ex: RUMO"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleConfirmAndExport}>Confirmar e Exportar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {hasSearched && (
           <div className="mt-4">
