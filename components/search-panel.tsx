@@ -44,7 +44,8 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
   
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
   const [dataChegada, setDataChegada] = useState("")
-  const [prefixo, setPrefixo] = useState("")
+  const [placaPrefixo, setPlacaPrefixo] = useState("")
+  const [terminal, setTerminal] = useState("")
 
   const searchableContent = useMemo(() => {
     return files.map((file, index) => {
@@ -150,9 +151,10 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
 
     if (filesToExport.length === 0) return
 
+    const terminalHeader = [terminal, "", "", "", "", "", ""]
     const headers = [
       "DATA CHEGADA",
-      "PREFIXO",
+      "PLACA/PREFIXO",
       "DATA DA EMISSÃO",
       "Nº DA CHAVE DE ACESSO FORNECEDOR",
       "CNPJ FORNECEDOR (FORMULA)",
@@ -161,27 +163,35 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
     ]
 
     const dataToExport = filesToExport.map((file, i) => {
-      const chaveAcessoCell = `D${i + 2}` // Coluna D (Chave de Acesso)
+      const rowIndex = i + 3 // 1-based: 1=Terminal, 2=Headers, 3=Data starts
+      const chaveAcessoCell = `D${rowIndex}`
       return [
         dataChegada,
-        prefixo,
+        placaPrefixo,
         file.nfeData!.dataEmissao,
         file.nfeData!.chaveAcesso,
-        { f: `=MID(${chaveAcessoCell}, 7, 14)` }, // Extrai CNPJ
-        { f: `=MID(${chaveAcessoCell}, 26, 9)` }, // Extrai Número
-        { f: `=MID(${chaveAcessoCell}, 23, 3)` }, // Extrai Série
+        { f: `=MID(${chaveAcessoCell}, 7, 14)` },
+        { f: `=MID(${chaveAcessoCell}, 26, 9)` },
+        { f: `=MID(${chaveAcessoCell}, 23, 3)` },
       ]
     })
+    
+    const worksheetData = [terminalHeader, headers, ...dataToExport];
 
-    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...dataToExport])
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData)
+    
+    // Merge the terminal header
+    worksheet['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
+
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, "Pesquisa NFE")
 
-    XLSX.writeFile(workbook, `relatorio_nfe_${Date.now()}.xlsx`)
+    XLSX.writeFile(workbook, `relatorio_nfe_${terminal}_${Date.now()}.xlsx`)
 
     setIsExportDialogOpen(false)
     setDataChegada("")
-    setPrefixo("")
+    setPlacaPrefixo("")
+    setTerminal("")
   }
 
   return (
@@ -243,6 +253,18 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
+               <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="terminal" className="text-right">
+                  TERMINAL
+                </Label>
+                <Input
+                  id="terminal"
+                  value={terminal}
+                  onChange={(e) => setTerminal(e.target.value)}
+                  className="col-span-3"
+                  placeholder="Ex: TEG, TEAG"
+                />
+              </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="data-chegada" className="text-right">
                   DATA CHEGADA
@@ -256,15 +278,15 @@ export function SearchPanel({ files, onSelectFile }: SearchPanelProps) {
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="prefixo" className="text-right">
-                  PREFIXO
+                <Label htmlFor="placa-prefixo" className="text-right">
+                  PLACA/PREFIXO
                 </Label>
                 <Input
-                  id="prefixo"
-                  value={prefixo}
-                  onChange={(e) => setPrefixo(e.target.value)}
+                  id="placa-prefixo"
+                  value={placaPrefixo}
+                  onChange={(e) => setPlacaPrefixo(e.target.value)}
                   className="col-span-3"
-                  placeholder="Ex: RUMO"
+                  placeholder="Ex: U78"
                 />
               </div>
             </div>
