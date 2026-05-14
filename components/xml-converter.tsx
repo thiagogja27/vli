@@ -138,17 +138,19 @@ export function XMLConverter() {
     setIsProcessing(false)
 
     if (results.some(r => r.nfeData)) {
-        const hasTeg = results.some(r => r.nfeData?.terminalEntrega?.toUpperCase().includes('TEG'));
-        const hasTeag = results.some(r => r.nfeData?.terminalEntrega?.toUpperCase().includes('TEAG'));
+      const hasTeg = results.some(r => r.nfeData?.terminalEntrega?.toUpperCase().includes('TEG'));
+      const hasTeag = results.some(r => r.nfeData?.terminalEntrega?.toUpperCase().includes('TEAG'));
 
-        if (hasTeg && hasTeag) {
-            alert('Foram encontradas notas com os terminais TEG e TEAG.');
-        } else if (hasTeg) {
-            alert('Foram encontradas notas com o terminal TEG.');
-        } else if (hasTeag) {
-            alert('Foram encontradas notas com o terminal TEAG.');
-        }
-    }
+      if (hasTeg && hasTeag) {
+          alert('Foram encontradas notas com os terminais TEG e TEAG.');
+      } else if (hasTeg) {
+          alert('Foram encontradas notas com o terminal TEG.');
+      } else if (hasTeag) {
+          alert('Foram encontradas notas com o terminal TEAG.');
+      } else {
+          alert('Nenhuma nota com terminal de entrega TEG ou TEAG foi encontrada.');
+      }
+  }
 
     if (results.length === 1 && results[0].nfeData) {
       setExpandedIndex(0)
@@ -536,7 +538,263 @@ export function XMLConverter() {
 
                 {expandedIndex === index && processedFile.nfeData && (
                   <CardContent className='space-y-6 border-t pt-6'>
-                     {/* ... (conteúdo expandido existente) ... */}
+                    {/* Info Geral */}
+                    <div className='grid gap-4 rounded-lg bg-muted/50 p-4 sm:grid-cols-2 lg:grid-cols-4'>
+                      <div>
+                        <p className='text-xs font-medium uppercase text-muted-foreground'>
+                          Numero
+                        </p>
+                        <p className='text-lg font-semibold'>
+                          {processedFile.nfeData.numero || 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className='text-xs font-medium uppercase text-muted-foreground'>
+                          Serie
+                        </p>
+                        <p className='text-lg font-semibold'>
+                          {processedFile.nfeData.serie || 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className='text-xs font-medium uppercase text-muted-foreground'>
+                          Data Emissao
+                        </p>
+                        <p className='text-lg font-semibold'>
+                          {processedFile.nfeData.dataEmissao || 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className='text-xs font-medium uppercase text-muted-foreground'>
+                          Valor Total
+                        </p>
+                        <p className='text-lg font-semibold text-primary'>
+                          {formatCurrency(processedFile.nfeData.impostos.valorTotal)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Informações Logísticas */}
+                    {(processedFile.nfeData.terminalEntrega || processedFile.nfeData.transbordo || processedFile.nfeData.retirada || processedFile.nfeData.tipoProduto !== 'OUTRO') && (
+                      <div className='grid gap-4 rounded-lg border border-blue-200 bg-blue-50/50 p-4 dark:border-blue-900 dark:bg-blue-950/20 sm:grid-cols-2 lg:grid-cols-4'>
+                        <div className='flex items-start gap-2'>
+                          <Package className='mt-0.5 h-4 w-4 text-blue-600' />
+                          <div>
+                            <p className='text-xs font-medium uppercase text-muted-foreground'>
+                              Produto
+                            </p>
+                            <p className='font-semibold'>
+                              {processedFile.nfeData.tipoProduto === 'OUTRO' ? 'Outro' : processedFile.nfeData.tipoProduto}
+                            </p>
+                          </div>
+                        </div>
+                        {processedFile.nfeData.terminalEntrega && (
+                          <div className='flex items-start gap-2'>
+                            <MapPin className='mt-0.5 h-4 w-4 text-green-600' />
+                            <div>
+                              <p className='text-xs font-medium uppercase text-muted-foreground'>
+                                Terminal Entrega
+                              </p>
+                              <p className='font-semibold text-sm'>
+                                {processedFile.nfeData.terminalEntrega}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        {processedFile.nfeData.transbordo && (
+                          <div className='flex items-start gap-2'>
+                            <Truck className='mt-0.5 h-4 w-4 text-orange-600' />
+                            <div>
+                              <p className='text-xs font-medium uppercase text-muted-foreground'>
+                                Transbordo
+                              </p>
+                              <p className='font-semibold text-sm'>
+                                {processedFile.nfeData.transbordo}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        {processedFile.nfeData.retirada && (
+                          <div className='flex items-start gap-2'>
+                            <FileArchive className='mt-0.5 h-4 w-4 text-purple-600' />
+                            <div>
+                              <p className='text-xs font-medium uppercase text-muted-foreground'>
+                                Retirada
+                              </p>
+                              <p className='font-semibold text-sm'>
+                                {processedFile.nfeData.retirada}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Emitente e Destinatario */}
+                    <div className='grid gap-6 md:grid-cols-2'>
+                      <div className='rounded-lg border p-4'>
+                        <h3 className='mb-3 font-semibold text-foreground'>Emitente</h3>
+                        <div className='space-y-1 text-sm'>
+                          <p className='font-medium'>
+                            {processedFile.nfeData.emitente.nome || 'N/A'}
+                          </p>
+                          {processedFile.nfeData.emitente.nomeFantasia && (
+                            <p className='text-muted-foreground'>
+                              {processedFile.nfeData.emitente.nomeFantasia}
+                            </p>
+                          )}
+                          <p className='text-muted-foreground'>
+                            CNPJ: {processedFile.nfeData.emitente.cnpj || 'N/A'}
+                          </p>
+                          {processedFile.nfeData.emitente.endereco && (
+                            <p className='text-muted-foreground'>
+                              {processedFile.nfeData.emitente.endereco}
+                            </p>
+                          )}
+                          {(processedFile.nfeData.emitente.cidade ||
+                            processedFile.nfeData.emitente.uf) && (
+                            <p className='text-muted-foreground'>
+                              {processedFile.nfeData.emitente.cidade} -{" "}
+                              {processedFile.nfeData.emitente.uf}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className='rounded-lg border p-4'>
+                        <h3 className='mb-3 font-semibold text-foreground'>Destinatario</h3>
+                        <div className='space-y-1 text-sm'>
+                          <p className='font-medium'>
+                            {processedFile.nfeData.destinatario.nome || 'N/A'}
+                          </p>
+                          <p className='text-muted-foreground'>
+                            CPF/CNPJ: {processedFile.nfeData.destinatario.cpfCnpj || 'N/A'}
+                          </p>
+                          {processedFile.nfeData.destinatario.endereco && (
+                            <p className='text-muted-foreground'>
+                              {processedFile.nfeData.destinatario.endereco}
+                            </p>
+                          )}
+                          {(processedFile.nfeData.destinatario.cidade ||
+                            processedFile.nfeData.destinatario.uf) && (
+                            <p className='text-muted-foreground'>
+                              {processedFile.nfeData.destinatario.cidade} -{" "}
+                              {processedFile.nfeData.destinatario.uf}
+                            </p>
+                          )}
+                          {processedFile.nfeData.destinatario.email && (
+                            <p className='text-muted-foreground'>
+                              {processedFile.nfeData.destinatario.email}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Itens */}
+                    {processedFile.nfeData.itens.length > 0 && (
+                      <div>
+                        <h3 className='mb-3 font-semibold text-foreground'>
+                          Produtos / Servicos
+                        </h3>
+                        <div className='overflow-x-auto rounded-lg border'>
+                          <table className='w-full text-sm'>
+                            <thead className='bg-muted'>
+                              <tr>
+                                <th className='px-4 py-3 text-left font-medium'>Descricao</th>
+                                <th className='px-4 py-3 text-center font-medium'>Qtd</th>
+                                <th className='px-4 py-3 text-right font-medium'>V. Unit</th>
+                                <th className='px-4 py-3 text-right font-medium'>V. Total</th>
+                              </tr>
+                            </thead>
+                            <tbody className='divide-y'>
+                              {processedFile.nfeData.itens.map((item, itemIndex) => (
+                                <tr key={itemIndex} className='hover:bg-muted/50'>
+                                  <td className='px-4 py-3'>
+                                    <p className='font-medium'>{item.descricao}</p>
+                                    {item.ncm && (
+                                      <p className='text-xs text-muted-foreground'>
+                                        NCM: {item.ncm}
+                                      </p>
+                                    )}
+                                  </td>
+                                  <td className='px-4 py-3 text-center'>
+                                    {item.quantidade.toFixed(2)} {item.unidade}
+                                  </td>
+                                  <td className='px-4 py-3 text-right'>
+                                    {formatCurrency(item.valorUnitario)}
+                                  </td>
+                                  <td className='px-4 py-3 text-right font-medium'>
+                                    {formatCurrency(item.valorTotal)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Totais */}
+                    <div className='rounded-lg border p-4'>
+                      <h3 className='mb-3 font-semibold text-foreground'>Resumo dos Valores</h3>
+                      <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
+                        <div className='flex justify-between'>
+                          <span className='text-muted-foreground'>Produtos/Servicos:</span>
+                          <span className='font-medium'>
+                            {formatCurrency(processedFile.nfeData.impostos.valorProdutos)}
+                          </span>
+                        </div>
+                        <div className='flex justify-between'>
+                          <span className='text-muted-foreground'>Desconto:</span>
+                          <span className='font-medium'>
+                            {formatCurrency(processedFile.nfeData.impostos.desconto)}
+                          </span>
+                        </div>
+                        <div className='flex justify-between'>
+                          <span className='text-muted-foreground'>Frete:</span>
+                          <span className='font-medium'>
+                            {formatCurrency(processedFile.nfeData.impostos.valorFrete)}
+                          </span>
+                        </div>
+                        <div className='flex justify-between'>
+                          <span className='text-muted-foreground'>ICMS:</span>
+                          <span className='font-medium'>
+                            {formatCurrency(processedFile.nfeData.impostos.valorICMS)}
+                          </span>
+                        </div>
+                        <div className='flex justify-between'>
+                          <span className='text-muted-foreground'>IPI:</span>
+                          <span className='font-medium'>
+                            {formatCurrency(processedFile.nfeData.impostos.valorIPI)}
+                          </span>
+                        </div>
+                        <div className='flex justify-between'>
+                          <span className='text-muted-foreground'>Outras Desp.:</span>
+                          <span className='font-medium'>
+                            {formatCurrency(processedFile.nfeData.impostos.outrasDesp)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className='mt-4 flex items-center justify-between border-t pt-4'>
+                        <span className='text-lg font-semibold'>Valor Total:</span>
+                        <span className='text-2xl font-bold text-primary'>
+                          {formatCurrency(processedFile.nfeData.impostos.valorTotal)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Chave de Acesso */}
+                    {processedFile.nfeData.chaveAcesso && (
+                      <div className='rounded-lg bg-muted/50 p-4'>
+                        <p className='text-xs font-medium uppercase text-muted-foreground'>
+                          Chave de Acesso
+                        </p>
+                        <p className='mt-1 break-all font-mono text-sm'>
+                          {processedFile.nfeData.chaveAcesso}
+                        </p>
+                      </div>
+                    )}
                   </CardContent>
                 )}
               </Card>
