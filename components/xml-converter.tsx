@@ -261,62 +261,106 @@ export function XMLConverter() {
     const filesToExport = filteredFiles || files.filter((f) => f.nfeData !== null);
     if (filesToExport.length === 0) return;
 
-    const dataToExport = [];
-    const headers = [
-      "Arquivo", "Chave de Acesso", "Numero NFe", "Data Emissão",
-      "Emitente Nome", "Emitente CNPJ", "Destinatário Nome", "Destinatário CNPJ",
-      "Valor Total", "Terminal de Entrega", "Transbordo", "Retirada", "Tipo Produto"
-    ];
-
-    for (const file of filesToExport) {
-        if (file.nfeData) {
-            dataToExport.push([
-                file.fileName,
-                { v: file.nfeData.chaveAcesso, t: 's' },
-                file.nfeData.numero,
-                file.nfeData.dataEmissao,
-                file.nfeData.emitente.nome,
-                { v: file.nfeData.emitente.cnpj, t: 's' },
-                file.nfeData.destinatario.nome,
-                { v: file.nfeData.destinatario.cpfCnpj, t: 's' },
-                file.nfeData.impostos.valorTotal,
-                file.nfeData.terminalEntrega,
-                file.nfeData.transbordo,
-                file.nfeData.retirada,
-                file.nfeData.tipoProduto
-            ]);
-        }
-    }
-
-    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...dataToExport]);
     const workbook = XLSX.utils.book_new();
+
+    // Main sheet
+    const mainSheetData = filesToExport.map(file => {
+      if (!file.nfeData) return null;
+      return {
+        "Arquivo": file.fileName,
+        "Chave de Acesso": file.nfeData.chaveAcesso,
+        "Numero NFe": file.nfeData.numero,
+        "Data Emissão": file.nfeData.dataEmissao,
+        "Emitente Nome": file.nfeData.emitente.nome,
+        "Emitente CNPJ": file.nfeData.emitente.cnpj,
+        "Destinatário Nome": file.nfeData.destinatario.nome,
+        "Destinatário CNPJ": file.nfeData.destinatario.cpfCnpj,
+        "Valor Total": file.nfeData.impostos.valorTotal,
+        "Terminal de Entrega": file.nfeData.terminalEntrega,
+        "Transbordo": file.nfeData.transbordo,
+        "Retirada": file.nfeData.retirada,
+        "Tipo Produto": file.nfeData.tipoProduto
+      };
+    }).filter((row): row is NonNullable<typeof row> => row !== null);
+
+    const worksheet = XLSX.utils.json_to_sheet(mainSheetData, {
+      header: [
+        "Arquivo", "Chave de Acesso", "Numero NFe", "Data Emissão",
+        "Emitente Nome", "Emitente CNPJ", "Destinatário Nome", "Destinatário CNPJ",
+        "Valor Total", "Terminal de Entrega", "Transbordo", "Retirada", "Tipo Produto"
+      ]
+    });
+
+    // Force string type for specific columns to prevent scientific notation
+    if (worksheet['!ref']) {
+      const range = XLSX.utils.decode_range(worksheet['!ref']);
+      for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+        // B = Chave de Acesso
+        const cellB = worksheet[XLSX.utils.encode_cell({c: 1, r: R})];
+        if (cellB && cellB.v) { cellB.t = 's'; }
+        // C = Numero NFe
+        const cellC = worksheet[XLSX.utils.encode_cell({c: 2, r: R})];
+        if (cellC && cellC.v) { cellC.t = 's'; }
+        // F = Emitente CNPJ
+        const cellF = worksheet[XLSX.utils.encode_cell({c: 5, r: R})];
+        if (cellF && cellF.v) { cellF.t = 's'; }
+        // H = Destinatário CNPJ
+        const cellH = worksheet[XLSX.utils.encode_cell({c: 7, r: R})];
+        if (cellH && cellH.v) { cellH.t = 's'; }
+      }
+    }
+    
     XLSX.utils.book_append_sheet(workbook, worksheet, "Notas Fiscais");
 
-    const itemsDataToExport: any[][] = [];
-    const itemHeaders = ["Chave de Acesso", "Numero NFe", "Código Produto", "Descrição", "NCM", "CFOP", "Quantidade", "Unidade", "Valor Unitário", "Valor Total"];
+    // Items sheet
+    const itemsSheetData: any[] = [];
+    filesToExport.forEach(file => {
+      if (file.nfeData && file.nfeData.itens) {
+        file.nfeData.itens.forEach(item => {
+          itemsSheetData.push({
+            "Chave de Acesso": file.nfeData!.chaveAcesso,
+            "Numero NFe": file.nfeData!.numero,
+            "Código Produto": item.codigo,
+            "Descrição": item.descricao,
+            "NCM": item.ncm,
+            "CFOP": item.cfop,
+            "Quantidade": item.quantidade,
+            "Unidade": item.unidade,
+            "Valor Unitário": item.valorUnitario,
+            "Valor Total": item.valorTotal
+          });
+        });
+      }
+    });
 
-    for (const file of filesToExport) {
-        if (file.nfeData && file.nfeData.itens) {
-            file.nfeData.itens.forEach(item => {
-                itemsDataToExport.push([
-                    { v: file.nfeData!.chaveAcesso, t: 's' },
-                    file.nfeData!.numero,
-                    item.codigo,
-                    item.descricao,
-                    item.ncm,
-                    item.cfop,
-                    item.quantidade,
-                    item.unidade,
-                    item.valorUnitario,
-                    item.valorTotal
-                ]);
-            });
+    if (itemsSheetData.length > 0) {
+      const itemsWorksheet = XLSX.utils.json_to_sheet(itemsSheetData, {
+        header: [
+          "Chave de Acesso", "Numero NFe", "Código Produto", "Descrição", "NCM", "CFOP", 
+          "Quantidade", "Unidade", "Valor Unitário", "Valor Total"
+        ]
+      });
+
+      // Force string type for specific columns
+      if (itemsWorksheet['!ref']) {
+        const range = XLSX.utils.decode_range(itemsWorksheet['!ref']);
+        for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+          // A = Chave de Acesso
+          const cellA = itemsWorksheet[XLSX.utils.encode_cell({c: 0, r: R})];
+          if (cellA && cellA.v) { cellA.t = 's'; }
+          // B = Numero NFe
+          const cellB = itemsWorksheet[XLSX.utils.encode_cell({c: 1, r: R})];
+          if (cellB && cellB.v) { cellB.t = 's'; }
+          // E = NCM
+          const cellE = itemsWorksheet[XLSX.utils.encode_cell({c: 4, r: R})];
+          if (cellE && cellE.v) { cellE.t = 's'; }
+          // F = CFOP
+          const cellF = itemsWorksheet[XLSX.utils.encode_cell({c: 5, r: R})];
+          if (cellF && cellF.v) { cellF.t = 's'; }
         }
-    }
-
-    if(itemsDataToExport.length > 0) {
-        const itemsWorksheet = XLSX.utils.aoa_to_sheet([itemHeaders, ...itemsDataToExport]);
-        XLSX.utils.book_append_sheet(workbook, itemsWorksheet, "Itens das Notas");
+      }
+      
+      XLSX.utils.book_append_sheet(workbook, itemsWorksheet, "Itens das Notas");
     }
 
     const fileName = filteredFiles ? `relatorio_nfe_sem_teg_teag_${Date.now()}.xlsx` : `relatorio_nfe_${Date.now()}.xlsx`;
