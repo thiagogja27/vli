@@ -272,13 +272,13 @@ export function XMLConverter() {
         if (file.nfeData) {
             dataToExport.push([
                 file.fileName,
-                file.nfeData.chaveAcesso,
+                { v: file.nfeData.chaveAcesso, t: 's' },
                 file.nfeData.numero,
                 file.nfeData.dataEmissao,
                 file.nfeData.emitente.nome,
-                file.nfeData.emitente.cnpj,
+                { v: file.nfeData.emitente.cnpj, t: 's' },
                 file.nfeData.destinatario.nome,
-                file.nfeData.destinatario.cpfCnpj,
+                { v: file.nfeData.destinatario.cpfCnpj, t: 's' },
                 file.nfeData.impostos.valorTotal,
                 file.nfeData.terminalEntrega,
                 file.nfeData.transbordo,
@@ -299,7 +299,7 @@ export function XMLConverter() {
         if (file.nfeData && file.nfeData.itens) {
             file.nfeData.itens.forEach(item => {
                 itemsDataToExport.push([
-                    file.nfeData!.chaveAcesso,
+                    { v: file.nfeData!.chaveAcesso, t: 's' },
                     file.nfeData!.numero,
                     item.codigo,
                     item.descricao,
