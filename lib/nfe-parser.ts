@@ -500,19 +500,33 @@ function formatPhone(phone: string): string {
 // Funções para extrair informações das informações complementares
 function extractTerminalEntrega(infComplementares: string): string {
   if (!infComplementares) return ""
-  const match = infComplementares.match(/ENTREGA:\s*([^,]+)/i)
-  return match ? match[1].trim() : "";
+
+  // Padrão 1: Busca por "ENTREGA: [NOME DO TERMINAL]"
+  let match = infComplementares.match(/ENTREGA:\s*([^,;.]+)/i);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+
+  // Padrão 2: Busca por "ALFANDEGADO ... [NOME DO TERMINAL]"
+  // Procura por palavras-chave de terminal após a palavra "ALFANDEGADO"
+  match = infComplementares.match(/ALFANDEGADO(?:[\s\S]*?)((?:TERMINAL|PORTO|TEG|TEAG|TGG|TIPLAM)[\w\s.,-]+)/i);
+  if (match && match[1]) {
+    // Limpa o resultado, removendo pontuação extra do final
+    return match[1].trim().replace(/[.,;]+$/, "").trim();
+  }
+
+  return ""
 }
 
 function extractTransbordo(infComplementares: string): string {
   if (!infComplementares) return ""
-  const match = infComplementares.match(/TRANSBORDO:\s*([^,]+)/i)
+  const match = infComplementares.match(/TRANSBORDO:\s*([^,;.]+)/i)
   return match ? match[1].trim() : "";
 }
 
 function extractRetirada(infComplementares: string): string {
   if (!infComplementares) return ""
-  const match = infComplementares.match(/RETIRADA:\s*([^,]+)/i)
+  const match = infComplementares.match(/RETIRADA:\s*([^,;.]+)/i)
   return match ? match[1].trim() : "";
 }
 
