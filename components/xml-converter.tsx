@@ -273,13 +273,13 @@ export function XMLConverter() {
       if (!file.nfeData) return [];
       return [
         file.fileName,
-        { v: file.nfeData.chaveAcesso, t: 's' },
-        { v: file.nfeData.numero, t: 's' },
+        { v: `'${file.nfeData.chaveAcesso}`, t: 's' },
+        { v: `'${file.nfeData.numero}`, t: 's' },
         file.nfeData.dataEmissao,
         file.nfeData.emitente.nome,
-        { v: file.nfeData.emitente.cnpj, t: 's' },
+        { v: `'${file.nfeData.emitente.cnpj}`, t: 's' },
         file.nfeData.destinatario.nome,
-        { v: file.nfeData.destinatario.cpfCnpj, t: 's' },
+        { v: `'${file.nfeData.destinatario.cpfCnpj}`, t: 's' },
         file.nfeData.impostos.valorTotal,
         file.nfeData.terminalEntrega,
         file.nfeData.transbordo,
@@ -289,6 +289,23 @@ export function XMLConverter() {
     }).filter(row => row.length > 0);
 
     const worksheet = XLSX.utils.aoa_to_sheet([mainSheetHeader, ...mainSheetData]);
+    
+    worksheet['!cols'] = [
+      { wch: 30 }, // Arquivo
+      { wch: 50 }, // Chave de Acesso
+      { wch: 15 }, // Numero NFe
+      { wch: 15 }, // Data Emissão
+      { wch: 40 }, // Emitente Nome
+      { wch: 20 }, // Emitente CNPJ
+      { wch: 40 }, // Destinatário Nome
+      { wch: 20 }, // Destinatário CNPJ
+      { wch: 15 }, // Valor Total
+      { wch: 25 }, // Terminal de Entrega
+      { wch: 25 }, // Transbordo
+      { wch: 25 }, // Retirada
+      { wch: 15 }  // Tipo Produto
+    ];
+
     XLSX.utils.book_append_sheet(workbook, worksheet, "Notas Fiscais");
 
     // Items sheet
@@ -301,12 +318,12 @@ export function XMLConverter() {
       if (file.nfeData && file.nfeData.itens) {
         file.nfeData.itens.forEach(item => {
           itemsSheetData.push([
-            { v: file.nfeData!.chaveAcesso, t: 's' },
-            { v: file.nfeData!.numero, t: 's' },
-            { v: item.codigo, t: 's' },
+            { v: `'${file.nfeData!.chaveAcesso}`, t: 's' },
+            { v: `'${file.nfeData!.numero}`, t: 's' },
+            { v: `'${item.codigo}`, t: 's' },
             item.descricao,
-            { v: item.ncm, t: 's' },
-            { v: item.cfop, t: 's' },
+            { v: `'${item.ncm}`, t: 's' },
+            { v: `'${item.cfop}`, t: 's' },
             item.quantidade,
             item.unidade,
             item.valorUnitario,
@@ -318,6 +335,20 @@ export function XMLConverter() {
 
     if (itemsSheetData.length > 0) {
       const itemsWorksheet = XLSX.utils.aoa_to_sheet([itemsSheetHeader, ...itemsSheetData]);
+      
+      itemsWorksheet['!cols'] = [
+          { wch: 50 }, // Chave de Acesso
+          { wch: 15 }, // Numero NFe
+          { wch: 15 }, // Código Produto
+          { wch: 50 }, // Descrição
+          { wch: 12 }, // NCM
+          { wch: 10 }, // CFOP
+          { wch: 12 }, // Quantidade
+          { wch: 10 }, // Unidade
+          { wch: 15 }, // Valor Unitário
+          { wch: 15 }  // Valor Total
+      ];
+
       XLSX.utils.book_append_sheet(workbook, itemsWorksheet, "Itens das Notas");
     }
 
