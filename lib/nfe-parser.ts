@@ -140,6 +140,8 @@ export function parseNFE(xmlString: string): NFEData {
   const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: "@_",
+    parseNodeValue: false, // Prevent automatic type conversion
+    parseAttributeValue: false, // Prevent automatic type conversion
     isArray: (name, jpath, isLeafNode, isAttribute) => { 
         return jpath === "NFe.infNFe.det" || jpath === "nfeProc.NFe.infNFe.det" || jpath === "infNFe.det" || jpath === "NFe.infNFe.cobr.dup" || jpath === "nfeProc.NFe.infNFe.cobr.dup" || jpath === "infNFe.cobr.dup";
     }
