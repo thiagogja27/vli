@@ -369,7 +369,7 @@ export function XMLConverter() {
             <CardDescription>
               Arraste arquivos XML ou um arquivo ZIP contendo multiplos XMLs
             </CardDescription>
-          </Header>
+          </CardHeader>
           <CardContent>
             <div
               onDrop={handleDrop}
