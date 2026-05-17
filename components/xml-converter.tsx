@@ -261,6 +261,8 @@ export function XMLConverter() {
     const filesToExport = filteredFiles || files.filter((f) => f.nfeData !== null);
     if (filesToExport.length === 0) return;
 
+    const safeString = (v: any) => String(v ?? '').trim();
+
     const workbook = XLSX.utils.book_new();
 
     // Main sheet
@@ -271,15 +273,21 @@ export function XMLConverter() {
     ];
     const mainSheetData = filesToExport.map(file => {
       if (!file.nfeData) return [];
+
+      const chaveAcesso = safeString(file.nfeData.chaveAcesso);
+      if (chaveAcesso.length > 0 && chaveAcesso.length !== 44) {
+        console.warn(`[VALIDAÇÃO EXCEL] Chave de Acesso inválida detectada para o arquivo ${file.fileName}. Tamanho: ${chaveAcesso.length}, Valor: "${chaveAcesso}". O valor provavelmente foi corrompido durante o parsing do XML.`);
+      }
+
       return [
         file.fileName,
-        { v: `'${file.nfeData.chaveAcesso}`, t: 's' },
-        { v: `'${file.nfeData.numero}`, t: 's' },
+        { v: chaveAcesso, t: 's' },
+        { v: safeString(file.nfeData.numero), t: 's' },
         file.nfeData.dataEmissao,
         file.nfeData.emitente.nome,
-        { v: `'${file.nfeData.emitente.cnpj}`, t: 's' },
+        { v: safeString(file.nfeData.emitente.cnpj), t: 's' },
         file.nfeData.destinatario.nome,
-        { v: `'${file.nfeData.destinatario.cpfCnpj}`, t: 's' },
+        { v: safeString(file.nfeData.destinatario.cpfCnpj), t: 's' },
         file.nfeData.impostos.valorTotal,
         file.nfeData.terminalEntrega,
         file.nfeData.transbordo,
@@ -318,12 +326,12 @@ export function XMLConverter() {
       if (file.nfeData && file.nfeData.itens) {
         file.nfeData.itens.forEach(item => {
           itemsSheetData.push([
-            { v: `'${file.nfeData!.chaveAcesso}`, t: 's' },
-            { v: `'${file.nfeData!.numero}`, t: 's' },
-            { v: `'${item.codigo}`, t: 's' },
+            { v: safeString(file.nfeData!.chaveAcesso), t: 's' },
+            { v: safeString(file.nfeData!.numero), t: 's' },
+            { v: safeString(item.codigo), t: 's' },
             item.descricao,
-            { v: `'${item.ncm}`, t: 's' },
-            { v: `'${item.cfop}`, t: 's' },
+            { v: safeString(item.ncm), t: 's' },
+            { v: safeString(item.cfop), t: 's' },
             item.quantidade,
             item.unidade,
             item.valorUnitario,
