@@ -39,16 +39,6 @@ interface ProcessedFile {
   error: string | null
 }
 
-// Helper function to force value as text for Excel
-const toExcelText = (value: any): string => {
-  if (value === null || value === undefined) {
-    return '';
-  }
-  // Append a Zero-width space to force Excel to treat it as a string
-  return String(value) + '\u200b';
-};
-
-
 export function XMLConverter() {
   const [files, setFiles] = useState<ProcessedFile[]>([])
   const [otherZipFiles, setOtherZipFiles] = useState<{ path: string; content: Blob }[]>([])
@@ -274,51 +264,60 @@ export function XMLConverter() {
     const workbook = XLSX.utils.book_new();
 
     // Main sheet
+    const mainSheetHeader = [
+      "Arquivo", "Chave de Acesso", "Numero NFe", "Data Emissão",
+      "Emitente Nome", "Emitente CNPJ", "Destinatário Nome", "Destinatário CNPJ",
+      "Valor Total", "Terminal de Entrega", "Transbordo", "Retirada", "Tipo Produto"
+    ];
     const mainSheetData = filesToExport.map(file => {
-      if (!file.nfeData) return null;
-      return {
-        "Arquivo": file.fileName,
-        "Chave de Acesso": toExcelText(file.nfeData.chaveAcesso),
-        "Numero NFe": toExcelText(file.nfeData.numero),
-        "Data Emissão": file.nfeData.dataEmissao,
-        "Emitente Nome": file.nfeData.emitente.nome,
-        "Emitente CNPJ": toExcelText(file.nfeData.emitente.cnpj),
-        "Destinatário Nome": file.nfeData.destinatario.nome,
-        "Destinatário CNPJ": toExcelText(file.nfeData.destinatario.cpfCnpj),
-        "Valor Total": file.nfeData.impostos.valorTotal,
-        "Terminal de Entrega": file.nfeData.terminalEntrega,
-        "Transbordo": file.nfeData.transbordo,
-        "Retirada": file.nfeData.retirada,
-        "Tipo Produto": file.nfeData.tipoProduto
-      };
-    }).filter((row): row is NonNullable<typeof row> => row !== null);
+      if (!file.nfeData) return [];
+      return [
+        file.fileName,
+        { v: file.nfeData.chaveAcesso, t: 's' },
+        { v: file.nfeData.numero, t: 's' },
+        file.nfeData.dataEmissao,
+        file.nfeData.emitente.nome,
+        { v: file.nfeData.emitente.cnpj, t: 's' },
+        file.nfeData.destinatario.nome,
+        { v: file.nfeData.destinatario.cpfCnpj, t: 's' },
+        file.nfeData.impostos.valorTotal,
+        file.nfeData.terminalEntrega,
+        file.nfeData.transbordo,
+        file.nfeData.retirada,
+        file.nfeData.tipoProduto
+      ];
+    }).filter(row => row.length > 0);
 
-    const worksheet = XLSX.utils.json_to_sheet(mainSheetData);
+    const worksheet = XLSX.utils.aoa_to_sheet([mainSheetHeader, ...mainSheetData]);
     XLSX.utils.book_append_sheet(workbook, worksheet, "Notas Fiscais");
 
     // Items sheet
-    const itemsSheetData: any[] = [];
+    const itemsSheetHeader = [
+      "Chave de Acesso", "Numero NFe", "Código Produto", "Descrição",
+      "NCM", "CFOP", "Quantidade", "Unidade", "Valor Unitário", "Valor Total"
+    ];
+    const itemsSheetData: any[][] = [];
     filesToExport.forEach(file => {
       if (file.nfeData && file.nfeData.itens) {
         file.nfeData.itens.forEach(item => {
-          itemsSheetData.push({
-            "Chave de Acesso": toExcelText(file.nfeData!.chaveAcesso),
-            "Numero NFe": toExcelText(file.nfeData!.numero),
-            "Código Produto": toExcelText(item.codigo),
-            "Descrição": item.descricao,
-            "NCM": toExcelText(item.ncm),
-            "CFOP": toExcelText(item.cfop),
-            "Quantidade": item.quantidade,
-            "Unidade": item.unidade,
-            "Valor Unitário": item.valorUnitario,
-            "Valor Total": item.valorTotal
-          });
+          itemsSheetData.push([
+            { v: file.nfeData!.chaveAcesso, t: 's' },
+            { v: file.nfeData!.numero, t: 's' },
+            { v: item.codigo, t: 's' },
+            item.descricao,
+            { v: item.ncm, t: 's' },
+            { v: item.cfop, t: 's' },
+            item.quantidade,
+            item.unidade,
+            item.valorUnitario,
+            item.valorTotal
+          ]);
         });
       }
     });
 
     if (itemsSheetData.length > 0) {
-      const itemsWorksheet = XLSX.utils.json_to_sheet(itemsSheetData);
+      const itemsWorksheet = XLSX.utils.aoa_to_sheet([itemsSheetHeader, ...itemsSheetData]);
       XLSX.utils.book_append_sheet(workbook, itemsWorksheet, "Itens das Notas");
     }
 
