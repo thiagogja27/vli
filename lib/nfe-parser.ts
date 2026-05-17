@@ -1,3 +1,5 @@
+import { XMLParser } from 'fast-xml-parser';
+
 export interface NFEData {
   tipo: "NFe" | "NFSe" | "Desconhecido"
   // Identificação
@@ -115,311 +117,274 @@ export interface NFEData {
   informacoesFisco: string
 }
 
-function getTextContent(doc: Document, tagName: string, parent?: Element): string {
-  const context = parent || doc
-  const elements = context.getElementsByTagName(tagName)
-  if (elements.length > 0 && elements[0].textContent) {
-    return elements[0].textContent.trim()
-  }
-  return ""
+// Helpers
+function getString(value: any): string {
+    if (value === undefined || value === null) {
+        return "";
+    }
+    return String(value).trim();
 }
 
-function parseNumber(value: string): number {
-  const num = parseFloat(value.replace(",", "."))
-  return isNaN(num) ? 0 : num
+function parseNumber(value: any): number {
+  if (typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const num = parseFloat(value.replace(",", "."))
+    return isNaN(num) ? 0 : num
+  }
+  return 0;
 }
 
 export function parseNFE(xmlString: string): NFEData {
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(xmlString, "text/xml")
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: "@_",
+    isArray: (name, jpath, isLeafNode, isAttribute) => { 
+        return jpath === "NFe.infNFe.det" || jpath === "nfeProc.NFe.infNFe.det" || jpath === "infNFe.det" || jpath === "NFe.infNFe.cobr.dup" || jpath === "nfeProc.NFe.infNFe.cobr.dup" || jpath === "infNFe.cobr.dup";
+    }
+  });
+  const doc = parser.parse(xmlString);
 
-  // Detectar tipo de documento
-  const isNFe = doc.getElementsByTagName("NFe").length > 0 || doc.getElementsByTagName("nfeProc").length > 0
-  const isNFSe =
-    doc.getElementsByTagName("CompNfse").length > 0 || doc.getElementsByTagName("Nfse").length > 0
-
-  const tipo = isNFe ? "NFe" : isNFSe ? "NFSe" : "Desconhecido"
-
-  if (isNFe) {
-    return parseNFeData(doc, tipo)
-  } else if (isNFSe) {
-    return parseNFSeData(doc, tipo)
+  // NFe
+  if (doc.nfeProc || doc.NFe) {
+    const nfeContainer = doc.nfeProc || doc;
+    return parseNFeData(nfeContainer, "NFe");
   }
 
-  return parseGenericData(doc, tipo)
+  // NFSe
+  if (doc.CompNfse || doc.Nfse) {
+      const nfseContainer = doc.CompNfse || doc.Nfse;
+      return parseNFSeData(nfseContainer, "NFSe");
+  }
+  if (doc.consultarLoteRpsResposta?.listaNfse?.compNfse) {
+      return parseNFSeData(doc.consultarLoteRpsResposta.listaNfse.compNfse, "NFSe");
+  }
+
+  return parseGenericData("Desconhecido");
 }
 
-function parseNFeData(doc: Document, tipo: "NFe" | "NFSe" | "Desconhecido"): NFEData {
-  // Identificação
-  const ide = doc.getElementsByTagName("ide")[0]
-  const emit = doc.getElementsByTagName("emit")[0]
-  const dest = doc.getElementsByTagName("dest")[0]
-  const total = doc.getElementsByTagName("total")[0]
-  const transp = doc.getElementsByTagName("transp")[0]
-  const cobr = doc.getElementsByTagName("cobr")[0]
-  const infAdic = doc.getElementsByTagName("infAdic")[0]
-  const protNFe = doc.getElementsByTagName("protNFe")[0]
+function parseNFeData(nfeContainer: any, tipo: "NFe"): NFEData {
+  const nfe = nfeContainer.NFe;
+  if (!nfe) throw new Error("Estrutura de NFe inválida: tag <NFe> não encontrada.");
 
-  // Parse itens
-  const dets = doc.getElementsByTagName("det")
-  const itens: NFEData["itens"] = []
+  const infNFe = nfe.infNFe;
+  const protNFe = nfeContainer.protNFe?.infProt;
 
-  for (let i = 0; i < dets.length; i++) {
-    const det = dets[i]
-    const prod = det.getElementsByTagName("prod")[0]
-    const imposto = det.getElementsByTagName("imposto")[0]
-    const icms = imposto?.getElementsByTagName("ICMS")[0]
-    const ipi = imposto?.getElementsByTagName("IPI")[0]
+  const ide = infNFe.ide;
+  const emit = infNFe.emit;
+  const dest = infNFe.dest;
+  const total = infNFe.total.ICMSTot;
+  const transp = infNFe.transp;
+  const cobr = infNFe.cobr;
+  const infAdic = infNFe.infAdic;
+
+  const itens: NFEData["itens"] = (infNFe.det || []).map((det: any, i: number) => {
+    const prod = det.prod;
+    const imposto = det.imposto;
+    const icms = imposto?.ICMS;
+    const ipi = imposto?.IPI;
     
-    // Encontrar o elemento ICMS específico (ICMS00, ICMS10, etc)
-    let icmsElement: Element | undefined
+    let icmsElement: any;
     if (icms) {
-      const icmsTypes = ["ICMS00", "ICMS10", "ICMS20", "ICMS30", "ICMS40", "ICMS41", "ICMS50", "ICMS51", "ICMS60", "ICMS70", "ICMS90", "ICMSSN101", "ICMSSN102", "ICMSSN201", "ICMSSN202", "ICMSSN500", "ICMSSN900"]
+      const icmsTypes = ["ICMS00", "ICMS10", "ICMS20", "ICMS30", "ICMS40", "ICMS41", "ICMS50", "ICMS51", "ICMS60", "ICMS70", "ICMS90", "ICMSSN101", "ICMSSN102", "ICMSSN201", "ICMSSN202", "ICMSSN500", "ICMSSN900"];
       for (const icmsType of icmsTypes) {
-        const found = icms.getElementsByTagName(icmsType)[0]
-        if (found) {
-          icmsElement = found
-          break
+        if (icms[icmsType]) {
+          icmsElement = icms[icmsType];
+          break;
         }
       }
     }
 
-    // Encontrar IPITrib
-    let ipiElement: Element | undefined
-    if (ipi) {
-      ipiElement = ipi.getElementsByTagName("IPITrib")[0]
-    }
+    const ipiElement = ipi?.IPITrib;
 
-    if (prod) {
-      itens.push({
-        numero: det.getAttribute("nItem") || String(i + 1),
-        codigo: getTextContent(doc, "cProd", prod),
-        descricao: getTextContent(doc, "xProd", prod),
-        ncm: getTextContent(doc, "NCM", prod),
-        cst: icmsElement ? (getTextContent(doc, "CST", icmsElement) || getTextContent(doc, "CSOSN", icmsElement)) : "",
-        cfop: getTextContent(doc, "CFOP", prod),
-        unidade: getTextContent(doc, "uCom", prod),
-        quantidade: parseNumber(getTextContent(doc, "qCom", prod)),
-        valorUnitario: parseNumber(getTextContent(doc, "vUnCom", prod)),
-        valorTotal: parseNumber(getTextContent(doc, "vProd", prod)),
-        baseICMS: icmsElement ? parseNumber(getTextContent(doc, "vBC", icmsElement)) : 0,
-        valorICMS: icmsElement ? parseNumber(getTextContent(doc, "vICMS", icmsElement)) : 0,
-        aliqICMS: icmsElement ? parseNumber(getTextContent(doc, "pICMS", icmsElement)) : 0,
-        aliqIPI: ipiElement ? parseNumber(getTextContent(doc, "pIPI", ipiElement)) : 0,
-        valorIPI: ipiElement ? parseNumber(getTextContent(doc, "vIPI", ipiElement)) : 0,
-      })
-    }
-  }
+    return {
+        numero: getString(det['@_nItem']) || String(i + 1),
+        codigo: getString(prod.cProd),
+        descricao: getString(prod.xProd),
+        ncm: getString(prod.NCM),
+        cst: icmsElement ? (getString(icmsElement.CST) || getString(icmsElement.CSOSN)) : "",
+        cfop: getString(prod.CFOP),
+        unidade: getString(prod.uCom),
+        quantidade: parseNumber(prod.qCom),
+        valorUnitario: parseNumber(prod.vUnCom),
+        valorTotal: parseNumber(prod.vProd),
+        baseICMS: icmsElement ? parseNumber(icmsElement.vBC) : 0,
+        valorICMS: icmsElement ? parseNumber(icmsElement.vICMS) : 0,
+        aliqICMS: icmsElement ? parseNumber(icmsElement.pICMS) : 0,
+        aliqIPI: ipiElement ? parseNumber(ipiElement.pIPI) : 0,
+        valorIPI: ipiElement ? parseNumber(ipiElement.vIPI) : 0,
+      };
+  });
 
-  // Endereco emitente
-  const enderEmit = emit?.getElementsByTagName("enderEmit")[0]
-  const enderDest = dest?.getElementsByTagName("enderDest")[0]
+  const enderEmit = emit?.enderEmit;
+  const enderDest = dest?.enderDest;
+  const transporta = transp?.transporta;
+  const veicTransp = transp?.veicTransp;
+  const vol = transp?.vol;
 
-  // Transportador
-  const transporta = transp?.getElementsByTagName("transporta")[0]
-  const veicTransp = transp?.getElementsByTagName("veicTransp")[0]
-  const vol = transp?.getElementsByTagName("vol")[0]
+  const duplicatas: NFEData["duplicatas"] = (cobr?.dup || []).map((dup: any) => ({
+      numero: getString(dup.nDup),
+      vencimento: formatDate(getString(dup.dVenc)),
+      valor: parseNumber(dup.vDup),
+    }));
 
-  // Duplicatas
-  const dups = cobr?.getElementsByTagName("dup") || []
-  const duplicatas: NFEData["duplicatas"] = []
-  for (let i = 0; i < dups.length; i++) {
-    const dup = dups[i]
-    duplicatas.push({
-      numero: getTextContent(doc, "nDup", dup as Element),
-      vencimento: formatDate(getTextContent(doc, "dVenc", dup as Element)),
-      valor: parseNumber(getTextContent(doc, "vDup", dup as Element)),
-    })
-  }
-
-  // Data e hora
-const dhEmi = getTextContent(doc, "dhEmi", ide) || getTextContent(doc, "dEmi", ide)
-  const dhSaiEnt = getTextContent(doc, "dhSaiEnt", ide) || getTextContent(doc, "dSaiEnt", ide)
+  const dhEmi = getString(ide.dhEmi) || getString(ide.dEmi);
+  const dhSaiEnt = getString(ide.dhSaiEnt) || getString(ide.dSaiEnt);
   
-  // Extrair informações complementares para análise
-  const informacoesComplementares = infAdic ? getTextContent(doc, "infCpl", infAdic as Element) : ""
-  
-  // Detectar tipo de produto baseado na descrição dos itens
-  const descricaoProdutos = itens.map(i => i.descricao).join(" ")
-  
-  return {
-  tipo,
-  numero: getTextContent(doc, "nNF", ide),
-  serie: getTextContent(doc, "serie", ide),
-  dataEmissao: formatDate(dhEmi),
-  horaEmissao: formatTime(dhEmi),
-  dataEntradaSaida: formatDate(dhSaiEnt),
-  horaEntradaSaida: formatTime(dhSaiEnt) || formatTime(getTextContent(doc, "hSaiEnt", ide)),
-  chaveAcesso: protNFe ? getTextContent(doc, "chNFe", protNFe as Element) : getTextContent(doc, "Id").replace("NFe", ""),
-  protocolo: protNFe ? getTextContent(doc, "nProt", protNFe as Element) : "",
-  naturezaOperacao: getTextContent(doc, "natOp", ide),
-  tipoOperacao: (getTextContent(doc, "tpNF", ide) as "0" | "1") || "1",
-  folha: "1/1",
-  // Campos extraídos das informações complementares
-  terminalEntrega: extractTerminalEntrega(informacoesComplementares),
-  transbordo: extractTransbordo(informacoesComplementares),
-  retirada: extractRetirada(informacoesComplementares),
-  tipoProduto: detectTipoProduto(descricaoProdutos, informacoesComplementares),
-  emitente: {
-      cnpj: formatCNPJ(getTextContent(doc, "CNPJ", emit)),
-      nome: getTextContent(doc, "xNome", emit),
-      nomeFantasia: getTextContent(doc, "xFant", emit),
-      endereco: getTextContent(doc, "xLgr", enderEmit),
-      numero: getTextContent(doc, "nro", enderEmit),
-      bairro: getTextContent(doc, "xBairro", enderEmit),
-      cidade: getTextContent(doc, "xMun", enderEmit),
-      uf: getTextContent(doc, "UF", enderEmit),
-      cep: formatCEP(getTextContent(doc, "CEP", enderEmit)),
-      telefone: formatPhone(getTextContent(doc, "fone", enderEmit)),
-      inscricaoEstadual: getTextContent(doc, "IE", emit),
-      inscricaoEstadualST: getTextContent(doc, "IEST", emit),
-    },
-    destinatario: {
-      cpfCnpj: formatCPFCNPJ(
-        getTextContent(doc, "CNPJ", dest) || getTextContent(doc, "CPF", dest)
-      ),
-      nome: getTextContent(doc, "xNome", dest),
-      endereco: getTextContent(doc, "xLgr", enderDest),
-      numero: getTextContent(doc, "nro", enderDest),
-      bairro: getTextContent(doc, "xBairro", enderDest),
-      cidade: getTextContent(doc, "xMun", enderDest),
-      uf: getTextContent(doc, "UF", enderDest),
-      cep: formatCEP(getTextContent(doc, "CEP", enderDest)),
-      telefone: formatPhone(getTextContent(doc, "fone", enderDest)),
-      email: getTextContent(doc, "email", dest),
-      inscricaoEstadual: getTextContent(doc, "IE", dest),
-    },
-    transportador: {
-      nome: transporta ? getTextContent(doc, "xNome", transporta) : "",
-      cpfCnpj: transporta ? formatCPFCNPJ(getTextContent(doc, "CNPJ", transporta) || getTextContent(doc, "CPF", transporta)) : "",
-      endereco: transporta ? getTextContent(doc, "xEnder", transporta) : "",
-      cidade: transporta ? getTextContent(doc, "xMun", transporta) : "",
-      uf: transporta ? getTextContent(doc, "UF", transporta) : "",
-      inscricaoEstadual: transporta ? getTextContent(doc, "IE", transporta) : "",
-      fretePorConta: getTextContent(doc, "modFrete", transp),
-      codigoANTT: veicTransp ? getTextContent(doc, "RNTC", veicTransp) : "",
-      placaVeiculo: veicTransp ? getTextContent(doc, "placa", veicTransp) : "",
-      ufVeiculo: veicTransp ? getTextContent(doc, "UF", veicTransp) : "",
-      quantidade: vol ? parseNumber(getTextContent(doc, "qVol", vol as Element)) : 0,
-      especie: vol ? getTextContent(doc, "esp", vol as Element) : "",
-      marca: vol ? getTextContent(doc, "marca", vol as Element) : "",
-      numeracao: vol ? getTextContent(doc, "nVol", vol as Element) : "",
-      pesoLiquido: vol ? parseNumber(getTextContent(doc, "pesoL", vol as Element)) : 0,
-      pesoBruto: vol ? parseNumber(getTextContent(doc, "pesoB", vol as Element)) : 0,
-    },
-    itens,
-    impostos: {
-      baseCalcICMS: parseNumber(getTextContent(doc, "vBC", total)),
-      valorICMS: parseNumber(getTextContent(doc, "vICMS", total)),
-      baseCalcICMSST: parseNumber(getTextContent(doc, "vBCST", total)),
-      valorICMSST: parseNumber(getTextContent(doc, "vST", total)),
-      valorFrete: parseNumber(getTextContent(doc, "vFrete", total)),
-      valorSeguro: parseNumber(getTextContent(doc, "vSeg", total)),
-      desconto: parseNumber(getTextContent(doc, "vDesc", total)),
-      outrasDesp: parseNumber(getTextContent(doc, "vOutro", total)),
-      valorIPI: parseNumber(getTextContent(doc, "vIPI", total)),
-      valorProdutos: parseNumber(getTextContent(doc, "vProd", total)),
-      valorTotal: parseNumber(getTextContent(doc, "vNF", total)),
-    },
-    fatura: cobr ? {
-      numero: getTextContent(doc, "nFat", cobr.getElementsByTagName("fat")[0] as Element),
-      valorOriginal: parseNumber(getTextContent(doc, "vOrig", cobr.getElementsByTagName("fat")[0] as Element)),
-      valorDesconto: parseNumber(getTextContent(doc, "vDesc", cobr.getElementsByTagName("fat")[0] as Element)),
-      valorLiquido: parseNumber(getTextContent(doc, "vLiq", cobr.getElementsByTagName("fat")[0] as Element)),
-    } : {
-      numero: "",
-      valorOriginal: 0,
-      valorDesconto: 0,
-      valorLiquido: 0,
-    },
-    duplicatas,
-    informacoesComplementares: infAdic ? getTextContent(doc, "infCpl", infAdic as Element) : "",
-    informacoesFisco: infAdic ? getTextContent(doc, "infAdFisco", infAdic as Element) : "",
-  }
-}
-
-function parseNFSeData(doc: Document, tipo: "NFe" | "NFSe" | "Desconhecido"): NFEData {
-  const infNfse = doc.getElementsByTagName("InfNfse")[0]
-  const prestador = doc.getElementsByTagName("PrestadorServico")[0] || doc.getElementsByTagName("Prestador")[0]
-  const tomador = doc.getElementsByTagName("TomadorServico")[0] || doc.getElementsByTagName("Tomador")[0]
-  const servico = doc.getElementsByTagName("Servico")[0]
-  const valores = doc.getElementsByTagName("Valores")[0]
-
-  const enderecoPrestador = prestador?.getElementsByTagName("Endereco")[0]
-  const enderecoTomador = tomador?.getElementsByTagName("Endereco")[0]
-  const identificacaoTomador = tomador?.getElementsByTagName("IdentificacaoTomador")[0]
-
-  const valorServicos = parseNumber(getTextContent(doc, "ValorServicos", valores))
+  const informacoesComplementares = getString(infAdic?.infCpl);
+  const descricaoProdutos = itens.map(i => i.descricao).join(" ");
   
   return {
     tipo,
-    numero: getTextContent(doc, "Numero", infNfse),
-    serie: getTextContent(doc, "Serie", infNfse) || "1",
-    dataEmissao: formatDate(getTextContent(doc, "DataEmissao", infNfse)),
-    horaEmissao: formatTime(getTextContent(doc, "DataEmissao", infNfse)),
+    numero: getString(ide.nNF),
+    serie: getString(ide.serie),
+    dataEmissao: formatDate(dhEmi),
+    horaEmissao: formatTime(dhEmi),
+    dataEntradaSaida: formatDate(dhSaiEnt),
+    horaEntradaSaida: formatTime(dhSaiEnt) || formatTime(getString(ide.hSaiEnt)),
+    chaveAcesso: getString(protNFe?.chNFe) || getString(infNFe['@_Id']).replace("NFe", ""),
+    protocolo: getString(protNFe?.nProt),
+    naturezaOperacao: getString(ide.natOp),
+    tipoOperacao: getString(ide.tpNF) as "0" | "1" || "1",
+    folha: "1/1",
+    terminalEntrega: extractTerminalEntrega(informacoesComplementares),
+    transbordo: extractTransbordo(informacoesComplementares),
+    retirada: extractRetirada(informacoesComplementares),
+    tipoProduto: detectTipoProduto(descricaoProdutos, informacoesComplementares),
+    emitente: {
+        cnpj: formatCNPJ(getString(emit.CNPJ)),
+        nome: getString(emit.xNome),
+        nomeFantasia: getString(emit.xFant),
+        endereco: getString(enderEmit.xLgr),
+        numero: getString(enderEmit.nro),
+        bairro: getString(enderEmit.xBairro),
+        cidade: getString(enderEmit.xMun),
+        uf: getString(enderEmit.UF),
+        cep: formatCEP(getString(enderEmit.CEP)),
+        telefone: formatPhone(getString(enderEmit.fone)),
+        inscricaoEstadual: getString(emit.IE),
+        inscricaoEstadualST: getString(emit.IEST),
+      },
+      destinatario: {
+        cpfCnpj: formatCPFCNPJ(getString(dest.CNPJ) || getString(dest.CPF)),
+        nome: getString(dest.xNome),
+        endereco: getString(enderDest.xLgr),
+        numero: getString(enderDest.nro),
+        bairro: getString(enderDest.xBairro),
+        cidade: getString(enderDest.xMun),
+        uf: getString(enderDest.UF),
+        cep: formatCEP(getString(enderDest.CEP)),
+        telefone: formatPhone(getString(dest.fone)),
+        email: getString(dest.email),
+        inscricaoEstadual: getString(dest.IE),
+      },
+      transportador: {
+        nome: getString(transporta?.xNome),
+        cpfCnpj: formatCPFCNPJ(getString(transporta?.CNPJ) || getString(transporta?.CPF)),
+        endereco: getString(transporta?.xEnder),
+        cidade: getString(transporta?.xMun),
+        uf: getString(transporta?.UF),
+        inscricaoEstadual: getString(transporta?.IE),
+        fretePorConta: getString(transp.modFrete),
+        codigoANTT: getString(veicTransp?.RNTC),
+        placaVeiculo: getString(veicTransp?.placa),
+        ufVeiculo: getString(veicTransp?.UF),
+        quantidade: parseNumber(vol?.qVol),
+        especie: getString(vol?.esp),
+        marca: getString(vol?.marca),
+        numeracao: getString(vol?.nVol),
+        pesoLiquido: parseNumber(vol?.pesoL),
+        pesoBruto: parseNumber(vol?.pesoB),
+      },
+      itens,
+      impostos: {
+        baseCalcICMS: parseNumber(total.vBC),
+        valorICMS: parseNumber(total.vICMS),
+        baseCalcICMSST: parseNumber(total.vBCST),
+        valorICMSST: parseNumber(total.vST),
+        valorFrete: parseNumber(total.vFrete),
+        valorSeguro: parseNumber(total.vSeg),
+        desconto: parseNumber(total.vDesc),
+        outrasDesp: parseNumber(total.vOutro),
+        valorIPI: parseNumber(total.vIPI),
+        valorProdutos: parseNumber(total.vProd),
+        valorTotal: parseNumber(total.vNF),
+      },
+      fatura: cobr?.fat ? {
+        numero: getString(cobr.fat.nFat),
+        valorOriginal: parseNumber(cobr.fat.vOrig),
+        valorDesconto: parseNumber(cobr.fat.vDesc),
+        valorLiquido: parseNumber(cobr.fat.vLiq),
+      } : { numero: "", valorOriginal: 0, valorDesconto: 0, valorLiquido: 0 },
+      duplicatas,
+      informacoesComplementares: getString(infAdic?.infCpl),
+      informacoesFisco: getString(infAdic?.infAdFisco),
+  }
+}
+
+function parseNFSeData(nfseContainer: any, tipo: "NFSe"): NFEData {
+  const nfse = nfseContainer.Nfse || nfseContainer;
+  const infNfse = nfse.InfNfse;
+  if (!infNfse) throw new Error("Estrutura de NFSe inválida: tag <InfNfse> não encontrada.");
+
+  const prestador = infNfse.PrestadorServico;
+  const tomador = infNfse.TomadorServico;
+  const servico = infNfse.Servico.Valores;
+  const discriminacao = infNfse.Servico.Discriminacao;
+
+  const valorServicos = parseNumber(servico.ValorServicos)
+  
+  return {
+    tipo,
+    numero: getString(infNfse.Numero),
+    serie: getString(infNfse.Serie) || "1",
+    dataEmissao: formatDate(getString(infNfse.DataEmissao)),
+    horaEmissao: formatTime(getString(infNfse.DataEmissao)),
     dataEntradaSaida: "",
     horaEntradaSaida: "",
-chaveAcesso: getTextContent(doc, "CodigoVerificacao", infNfse),
-  protocolo: "",
-  naturezaOperacao: "Prestacao de Servicos",
-  tipoOperacao: "1",
-  folha: "1/1",
-  terminalEntrega: "",
-  transbordo: "",
-  retirada: "",
-  tipoProduto: "OUTRO",
-  emitente: {
-      cnpj: formatCNPJ(getTextContent(doc, "Cnpj", prestador)),
-      nome: getTextContent(doc, "RazaoSocial", prestador),
-      nomeFantasia: getTextContent(doc, "NomeFantasia", prestador),
-      endereco: getTextContent(doc, "Endereco", enderecoPrestador),
-      numero: getTextContent(doc, "Numero", enderecoPrestador),
-      bairro: getTextContent(doc, "Bairro", enderecoPrestador),
-      cidade: getTextContent(doc, "Municipio", enderecoPrestador) || getTextContent(doc, "CodigoMunicipio", enderecoPrestador),
-      uf: getTextContent(doc, "Uf", enderecoPrestador),
-      cep: formatCEP(getTextContent(doc, "Cep", enderecoPrestador)),
-      telefone: formatPhone(getTextContent(doc, "Telefone", prestador)),
-      inscricaoEstadual: getTextContent(doc, "InscricaoMunicipal", prestador),
-      inscricaoEstadualST: "",
-    },
-    destinatario: {
-      cpfCnpj: formatCPFCNPJ(
-        getTextContent(doc, "Cnpj", identificacaoTomador) || getTextContent(doc, "Cpf", identificacaoTomador)
-      ),
-      nome: getTextContent(doc, "RazaoSocial", tomador),
-      endereco: getTextContent(doc, "Endereco", enderecoTomador),
-      numero: getTextContent(doc, "Numero", enderecoTomador),
-      bairro: getTextContent(doc, "Bairro", enderecoTomador),
-      cidade: getTextContent(doc, "Municipio", enderecoTomador) || getTextContent(doc, "CodigoMunicipio", enderecoTomador),
-      uf: getTextContent(doc, "Uf", enderecoTomador),
-      cep: formatCEP(getTextContent(doc, "Cep", enderecoTomador)),
-      telefone: formatPhone(getTextContent(doc, "Telefone", tomador)),
-      email: getTextContent(doc, "Email", tomador),
-      inscricaoEstadual: "",
-    },
-    transportador: {
-      nome: "",
-      cpfCnpj: "",
-      endereco: "",
-      cidade: "",
-      uf: "",
-      inscricaoEstadual: "",
-      fretePorConta: "",
-      codigoANTT: "",
-      placaVeiculo: "",
-      ufVeiculo: "",
-      quantidade: 0,
-      especie: "",
-      marca: "",
-      numeracao: "",
-      pesoLiquido: 0,
-      pesoBruto: 0,
-    },
+    chaveAcesso: getString(infNfse.CodigoVerificacao),
+    protocolo: "",
+    naturezaOperacao: "Prestacao de Servicos",
+    tipoOperacao: "1",
+    folha: "1/1",
+    terminalEntrega: "",
+    transbordo: "",
+    retirada: "",
+    tipoProduto: "OUTRO",
+    emitente: {
+        cnpj: formatCNPJ(getString(prestador.IdentificacaoPrestador.Cnpj)),
+        nome: getString(prestador.RazaoSocial),
+        nomeFantasia: getString(prestador.NomeFantasia),
+        endereco: getString(prestador.Endereco.Endereco),
+        numero: getString(prestador.Endereco.Numero),
+        bairro: getString(prestador.Endereco.Bairro),
+        cidade: getString(prestador.Endereco.CodigoMunicipio),
+        uf: getString(prestador.Endereco.Uf),
+        cep: formatCEP(getString(prestador.Endereco.Cep)),
+        telefone: formatPhone(getString(prestador.Contato.Telefone)),
+        inscricaoEstadual: getString(prestador.IdentificacaoPrestador.InscricaoMunicipal),
+        inscricaoEstadualST: "",
+      },
+      destinatario: {
+        cpfCnpj: formatCPFCNPJ(getString(tomador.IdentificacaoTomador.CpfCnpj.Cnpj) || getString(tomador.IdentificacaoTomador.CpfCnpj.Cpf)),
+        nome: getString(tomador.RazaoSocial),
+        endereco: getString(tomador.Endereco.Endereco),
+        numero: getString(tomador.Endereco.Numero),
+        bairro: getString(tomador.Endereco.Bairro),
+        cidade: getString(tomador.Endereco.CodigoMunicipio),
+        uf: getString(tomador.Endereco.Uf),
+        cep: formatCEP(getString(tomador.Endereco.Cep)),
+        telefone: formatPhone(getString(tomador.Contato.Telefone)),
+        email: getString(tomador.Contato.Email),
+        inscricaoEstadual: "",
+      },
+    transportador: { nome: "", cpfCnpj: "", endereco: "", cidade: "", uf: "", inscricaoEstadual: "", fretePorConta: "", codigoANTT: "", placaVeiculo: "", ufVeiculo: "", quantidade: 0, especie: "", marca: "", numeracao: "", pesoLiquido: 0, pesoBruto: 0 },
     itens: [
       {
         numero: "1",
-        codigo: getTextContent(doc, "ItemListaServico", servico),
-        descricao: getTextContent(doc, "Discriminacao", servico),
+        codigo: getString(infNfse.Servico.ItemListaServico),
+        descricao: getString(discriminacao),
         ncm: "",
         cst: "",
         cfop: "",
@@ -441,110 +406,33 @@ chaveAcesso: getTextContent(doc, "CodigoVerificacao", infNfse),
       valorICMSST: 0,
       valorFrete: 0,
       valorSeguro: 0,
-      desconto: parseNumber(getTextContent(doc, "DescontoIncondicionado", valores)),
+      desconto: parseNumber(servico.DescontoIncondicionado),
       outrasDesp: 0,
       valorIPI: 0,
       valorProdutos: valorServicos,
-      valorTotal: parseNumber(getTextContent(doc, "ValorLiquidoNfse", valores)) || valorServicos,
+      valorTotal: parseNumber(servico.ValorLiquidoNfse) || valorServicos,
     },
-    fatura: {
-      numero: "",
-      valorOriginal: 0,
-      valorDesconto: 0,
-      valorLiquido: 0,
-    },
+    fatura: { numero: "", valorOriginal: 0, valorDesconto: 0, valorLiquido: 0 },
     duplicatas: [],
-    informacoesComplementares: getTextContent(doc, "Discriminacao", servico),
+    informacoesComplementares: getString(discriminacao),
     informacoesFisco: "",
   }
 }
 
-function parseGenericData(doc: Document, tipo: "NFe" | "NFSe" | "Desconhecido"): NFEData {
+function parseGenericData(tipo: "NFe" | "NFSe" | "Desconhecido"): NFEData {
   return {
     tipo,
-    numero: "",
-    serie: "",
-    dataEmissao: new Date().toLocaleDateString("pt-BR"),
-    horaEmissao: "",
-    dataEntradaSaida: "",
-    horaEntradaSaida: "",
-    chaveAcesso: "",
-    protocolo: "",
-    naturezaOperacao: "",
-tipoOperacao: "1",
-  folha: "1/1",
-  terminalEntrega: "",
-  transbordo: "",
-  retirada: "",
-  tipoProduto: "OUTRO",
-  emitente: {
-  cnpj: "",
-  nome: "",
-      nomeFantasia: "",
-      endereco: "",
-      numero: "",
-      bairro: "",
-      cidade: "",
-      uf: "",
-      cep: "",
-      telefone: "",
-      inscricaoEstadual: "",
-      inscricaoEstadualST: "",
-    },
-    destinatario: {
-      cpfCnpj: "",
-      nome: "",
-      endereco: "",
-      numero: "",
-      bairro: "",
-      cidade: "",
-      uf: "",
-      cep: "",
-      telefone: "",
-      email: "",
-      inscricaoEstadual: "",
-    },
-    transportador: {
-      nome: "",
-      cpfCnpj: "",
-      endereco: "",
-      cidade: "",
-      uf: "",
-      inscricaoEstadual: "",
-      fretePorConta: "",
-      codigoANTT: "",
-      placaVeiculo: "",
-      ufVeiculo: "",
-      quantidade: 0,
-      especie: "",
-      marca: "",
-      numeracao: "",
-      pesoLiquido: 0,
-      pesoBruto: 0,
-    },
+    numero: "", serie: "", dataEmissao: new Date().toLocaleDateString("pt-BR"), horaEmissao: "",
+    dataEntradaSaida: "", horaEntradaSaida: "", chaveAcesso: "", protocolo: "", naturezaOperacao: "",
+    tipoOperacao: "1", folha: "1/1", terminalEntrega: "", transbordo: "", retirada: "", tipoProduto: "OUTRO",
+    emitente: { cnpj: "", nome: "", nomeFantasia: "", endereco: "", numero: "", bairro: "", cidade: "", uf: "", cep: "", telefone: "", inscricaoEstadual: "", inscricaoEstadualST: "" },
+    destinatario: { cpfCnpj: "", nome: "", endereco: "", numero: "", bairro: "", cidade: "", uf: "", cep: "", telefone: "", email: "", inscricaoEstadual: "" },
+    transportador: { nome: "", cpfCnpj: "", endereco: "", cidade: "", uf: "", inscricaoEstadual: "", fretePorConta: "", codigoANTT: "", placaVeiculo: "", ufVeiculo: "", quantidade: 0, especie: "", marca: "", numeracao: "", pesoLiquido: 0, pesoBruto: 0 },
     itens: [],
-    impostos: {
-      baseCalcICMS: 0,
-      valorICMS: 0,
-      baseCalcICMSST: 0,
-      valorICMSST: 0,
-      valorFrete: 0,
-      valorSeguro: 0,
-      desconto: 0,
-      outrasDesp: 0,
-      valorIPI: 0,
-      valorProdutos: 0,
-      valorTotal: 0,
-    },
-    fatura: {
-      numero: "",
-      valorOriginal: 0,
-      valorDesconto: 0,
-      valorLiquido: 0,
-    },
+    impostos: { baseCalcICMS: 0, valorICMS: 0, baseCalcICMSST: 0, valorICMSST: 0, valorFrete: 0, valorSeguro: 0, desconto: 0, outrasDesp: 0, valorIPI: 0, valorProdutos: 0, valorTotal: 0 },
+    fatura: { numero: "", valorOriginal: 0, valorDesconto: 0, valorLiquido: 0 },
     duplicatas: [],
-    informacoesComplementares: "",
-    informacoesFisco: "",
+    informacoesComplementares: "", informacoesFisco: "",
   }
 }
 
@@ -553,7 +441,8 @@ function formatDate(dateStr: string): string {
   if (!dateStr) return ""
   try {
     const date = new Date(dateStr)
-    return date.toLocaleDateString("pt-BR")
+    if(isNaN(date.getTime())) return dateStr;
+    return date.toLocaleDateString("pt-BR", { timeZone: 'UTC' })
   } catch {
     return dateStr
   }
@@ -563,6 +452,7 @@ function formatTime(dateStr: string): string {
   if (!dateStr) return ""
   try {
     const date = new Date(dateStr)
+     if(isNaN(date.getTime())) return "";
     return date.toLocaleTimeString("pt-BR")
   } catch {
     return ""
@@ -605,37 +495,25 @@ function formatPhone(phone: string): string {
   return cleaned.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3")
   }
   return phone
-  }
+}
 
 // Funções para extrair informações das informações complementares
 function extractTerminalEntrega(infComplementares: string): string {
   if (!infComplementares) return ""
-  // Procura por "ENTREGA:" e pega o nome do terminal
   const match = infComplementares.match(/ENTREGA:\s*([^,]+)/i)
-  if (match) {
-    return match[1].trim()
-  }
-  return ""
+  return match ? match[1].trim() : "";
 }
 
 function extractTransbordo(infComplementares: string): string {
   if (!infComplementares) return ""
-  // Procura por "TRANSBORDO:" e pega o nome do terminal
   const match = infComplementares.match(/TRANSBORDO:\s*([^,]+)/i)
-  if (match) {
-    return match[1].trim()
-  }
-  return ""
+  return match ? match[1].trim() : "";
 }
 
 function extractRetirada(infComplementares: string): string {
   if (!infComplementares) return ""
-  // Procura por "RETIRADA:" e pega o nome do local
   const match = infComplementares.match(/RETIRADA:\s*([^,]+)/i)
-  if (match) {
-    return match[1].trim()
-  }
-  return ""
+  return match ? match[1].trim() : "";
 }
 
 function detectTipoProduto(descricaoProduto: string, infComplementares: string): "SOJA" | "MILHO" | "ACUCAR" | "OUTRO" {
@@ -647,5 +525,3 @@ function detectTipoProduto(descricaoProduto: string, infComplementares: string):
   
   return "OUTRO"
 }
-
-// Alteração para teste de deploy

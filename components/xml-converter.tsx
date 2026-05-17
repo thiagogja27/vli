@@ -257,9 +257,9 @@ export function XMLConverter() {
     }
   };
 
-  const handleDownloadExcel = () => {
-    const successfulFiles = files.filter((f) => f.nfeData !== null);
-    if (successfulFiles.length === 0) return;
+  const handleDownloadExcel = (filteredFiles?: ProcessedFile[]) => {
+    const filesToExport = filteredFiles || files.filter((f) => f.nfeData !== null);
+    if (filesToExport.length === 0) return;
 
     const dataToExport = [];
     const headers = [
@@ -268,7 +268,7 @@ export function XMLConverter() {
       "Valor Total", "Terminal de Entrega", "Transbordo", "Retirada", "Tipo Produto"
     ];
 
-    for (const file of successfulFiles) {
+    for (const file of filesToExport) {
         if (file.nfeData) {
             dataToExport.push([
                 file.fileName,
@@ -295,7 +295,7 @@ export function XMLConverter() {
     const itemsDataToExport: any[][] = [];
     const itemHeaders = ["Chave de Acesso", "Numero NFe", "Código Produto", "Descrição", "NCM", "CFOP", "Quantidade", "Unidade", "Valor Unitário", "Valor Total"];
 
-    for (const file of successfulFiles) {
+    for (const file of filesToExport) {
         if (file.nfeData && file.nfeData.itens) {
             file.nfeData.itens.forEach(item => {
                 itemsDataToExport.push([
@@ -319,8 +319,14 @@ export function XMLConverter() {
         XLSX.utils.book_append_sheet(workbook, itemsWorksheet, "Itens das Notas");
     }
 
-    XLSX.writeFile(workbook, `relatorio_nfe_${Date.now()}.xlsx`);
+    const fileName = filteredFiles ? `relatorio_nfe_sem_teg_teag_${Date.now()}.xlsx` : `relatorio_nfe_${Date.now()}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
   };
+
+  const handleDownloadExcelWithoutTegTeag = () => {
+    const filtered = files.filter(f => f.nfeData && !f.nfeData.terminalEntrega.toUpperCase().includes('TEG') && !f.nfeData.terminalEntrega.toUpperCase().includes('TEAG'));
+    handleDownloadExcel(filtered);
+  }
 
   const handleClear = () => {
     setFiles([])
@@ -423,9 +429,13 @@ export function XMLConverter() {
                 <div className='flex items-center gap-2'>
                 {successCount > 0 && (
                     <>
-                        <Button onClick={handleDownloadExcel} size='sm' className='gap-2'>
+                        <Button onClick={() => handleDownloadExcel()} size='sm' className='gap-2'>
                             <FileSpreadsheet className='h-4 w-4' />
                             Excel
+                        </Button>
+                        <Button onClick={handleDownloadExcelWithoutTegTeag} size='sm' className='gap-2'>
+                            <FileSpreadsheet className='h-4 w-4' />
+                            Excel (Sem TEG/TEAG)
                         </Button>
                         <Button onClick={handleDownloadAllPDFs} size='sm' className='gap-2' disabled={isDownloading}>
                         {isDownloading ? (
