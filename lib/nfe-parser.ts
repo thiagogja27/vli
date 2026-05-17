@@ -520,8 +520,20 @@ function extractTerminalEntrega(infComplementares: string): string {
 
 function extractTransbordo(infComplementares: string): string {
   if (!infComplementares) return ""
-  const match = infComplementares.match(/TRANSBORDO:\s*([^,;.]+)/i)
-  return match ? match[1].trim() : "";
+
+  // Padrão 1: Busca por "TRANSBORDO: [VALOR]"
+  let match = infComplementares.match(/TRANSBORDO:\s*([^,;.]+)/i);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+
+  // Padrão 2: Busca por "cidade: [VALOR]"
+  match = infComplementares.match(/cidade:\s*([^,;.]+)/i);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+
+  return "";
 }
 
 function extractRetirada(infComplementares: string): string {
