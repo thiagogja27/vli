@@ -39,6 +39,16 @@ interface ProcessedFile {
   error: string | null
 }
 
+// Helper function to force value as text for Excel
+const toExcelText = (value: any): string => {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  // Append a Zero-width space to force Excel to treat it as a string
+  return String(value) + '\u200b';
+};
+
+
 export function XMLConverter() {
   const [files, setFiles] = useState<ProcessedFile[]>([])
   const [otherZipFiles, setOtherZipFiles] = useState<{ path: string; content: Blob }[]>([])
@@ -268,13 +278,13 @@ export function XMLConverter() {
       if (!file.nfeData) return null;
       return {
         "Arquivo": file.fileName,
-        "Chave de Acesso": file.nfeData.chaveAcesso,
-        "Numero NFe": file.nfeData.numero,
+        "Chave de Acesso": toExcelText(file.nfeData.chaveAcesso),
+        "Numero NFe": toExcelText(file.nfeData.numero),
         "Data Emissão": file.nfeData.dataEmissao,
         "Emitente Nome": file.nfeData.emitente.nome,
-        "Emitente CNPJ": file.nfeData.emitente.cnpj,
+        "Emitente CNPJ": toExcelText(file.nfeData.emitente.cnpj),
         "Destinatário Nome": file.nfeData.destinatario.nome,
-        "Destinatário CNPJ": file.nfeData.destinatario.cpfCnpj,
+        "Destinatário CNPJ": toExcelText(file.nfeData.destinatario.cpfCnpj),
         "Valor Total": file.nfeData.impostos.valorTotal,
         "Terminal de Entrega": file.nfeData.terminalEntrega,
         "Transbordo": file.nfeData.transbordo,
@@ -283,33 +293,7 @@ export function XMLConverter() {
       };
     }).filter((row): row is NonNullable<typeof row> => row !== null);
 
-    const worksheet = XLSX.utils.json_to_sheet(mainSheetData, {
-      header: [
-        "Arquivo", "Chave de Acesso", "Numero NFe", "Data Emissão",
-        "Emitente Nome", "Emitente CNPJ", "Destinatário Nome", "Destinatário CNPJ",
-        "Valor Total", "Terminal de Entrega", "Transbordo", "Retirada", "Tipo Produto"
-      ]
-    });
-
-    // Force string type for specific columns to prevent scientific notation
-    if (worksheet['!ref']) {
-      const range = XLSX.utils.decode_range(worksheet['!ref']);
-      for (let R = range.s.r + 1; R <= range.e.r; ++R) {
-        // B = Chave de Acesso
-        const cellB = worksheet[XLSX.utils.encode_cell({c: 1, r: R})];
-        if (cellB && cellB.v) { cellB.t = 's'; }
-        // C = Numero NFe
-        const cellC = worksheet[XLSX.utils.encode_cell({c: 2, r: R})];
-        if (cellC && cellC.v) { cellC.t = 's'; }
-        // F = Emitente CNPJ
-        const cellF = worksheet[XLSX.utils.encode_cell({c: 5, r: R})];
-        if (cellF && cellF.v) { cellF.t = 's'; }
-        // H = Destinatário CNPJ
-        const cellH = worksheet[XLSX.utils.encode_cell({c: 7, r: R})];
-        if (cellH && cellH.v) { cellH.t = 's'; }
-      }
-    }
-    
+    const worksheet = XLSX.utils.json_to_sheet(mainSheetData);
     XLSX.utils.book_append_sheet(workbook, worksheet, "Notas Fiscais");
 
     // Items sheet
@@ -318,12 +302,12 @@ export function XMLConverter() {
       if (file.nfeData && file.nfeData.itens) {
         file.nfeData.itens.forEach(item => {
           itemsSheetData.push({
-            "Chave de Acesso": file.nfeData!.chaveAcesso,
-            "Numero NFe": file.nfeData!.numero,
-            "Código Produto": item.codigo,
+            "Chave de Acesso": toExcelText(file.nfeData!.chaveAcesso),
+            "Numero NFe": toExcelText(file.nfeData!.numero),
+            "Código Produto": toExcelText(item.codigo),
             "Descrição": item.descricao,
-            "NCM": item.ncm,
-            "CFOP": item.cfop,
+            "NCM": toExcelText(item.ncm),
+            "CFOP": toExcelText(item.cfop),
             "Quantidade": item.quantidade,
             "Unidade": item.unidade,
             "Valor Unitário": item.valorUnitario,
@@ -334,32 +318,7 @@ export function XMLConverter() {
     });
 
     if (itemsSheetData.length > 0) {
-      const itemsWorksheet = XLSX.utils.json_to_sheet(itemsSheetData, {
-        header: [
-          "Chave de Acesso", "Numero NFe", "Código Produto", "Descrição", "NCM", "CFOP", 
-          "Quantidade", "Unidade", "Valor Unitário", "Valor Total"
-        ]
-      });
-
-      // Force string type for specific columns
-      if (itemsWorksheet['!ref']) {
-        const range = XLSX.utils.decode_range(itemsWorksheet['!ref']);
-        for (let R = range.s.r + 1; R <= range.e.r; ++R) {
-          // A = Chave de Acesso
-          const cellA = itemsWorksheet[XLSX.utils.encode_cell({c: 0, r: R})];
-          if (cellA && cellA.v) { cellA.t = 's'; }
-          // B = Numero NFe
-          const cellB = itemsWorksheet[XLSX.utils.encode_cell({c: 1, r: R})];
-          if (cellB && cellB.v) { cellB.t = 's'; }
-          // E = NCM
-          const cellE = itemsWorksheet[XLSX.utils.encode_cell({c: 4, r: R})];
-          if (cellE && cellE.v) { cellE.t = 's'; }
-          // F = CFOP
-          const cellF = itemsWorksheet[XLSX.utils.encode_cell({c: 5, r: R})];
-          if (cellF && cellF.v) { cellF.t = 's'; }
-        }
-      }
-      
+      const itemsWorksheet = XLSX.utils.json_to_sheet(itemsSheetData);
       XLSX.utils.book_append_sheet(workbook, itemsWorksheet, "Itens das Notas");
     }
 
@@ -410,7 +369,7 @@ export function XMLConverter() {
             <CardDescription>
               Arraste arquivos XML ou um arquivo ZIP contendo multiplos XMLs
             </CardDescription>
-          </CardHeader>
+          </Header>
           <CardContent>
             <div
               onDrop={handleDrop}
