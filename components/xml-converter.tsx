@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { parseNFE, type NFEData } from '@/lib/nfe-parser'
 import { Dashboard } from '@/components/dashboard'
 import { SearchPanel } from '@/components/search-panel'
-import { MapPanel } from '@/components/map-panel' // Importar o novo painel do mapa
+import { MapPanel } from '@/components/map-panel'
 import {
   FileText,
   Upload,
@@ -22,14 +23,19 @@ import {
   BarChart3,
   Search,
   List,
-  MapPin,
+  Map,
+  FileSpreadsheet,
   Truck,
   Package,
-  FileSpreadsheet,
-  Map, // Ícone para a aba do mapa
+  MapPin,
 } from 'lucide-react'
 import JSZip from 'jszip'
 import * as XLSX from 'xlsx'
+
+const NfeConverter = dynamic(() => import('./nfe-converter').then(mod => mod.NfeConverter), { 
+  ssr: false,
+  loading: () => <div className="flex items-center justify-center p-8"><Loader2 className="h-8 w-8 animate-spin" /></div>
+})
 
 interface ProcessedFile {
   fileName: string
@@ -346,486 +352,252 @@ export function XMLConverter() {
             <FileText className='h-8 w-8 text-primary' />
           </div>
           <h1 className='text-3xl font-bold tracking-tight text-foreground'>
-            Conversor XML para PDF
+            Conversor de Notas Fiscais
           </h1>
           <p className='mt-2 text-muted-foreground'>
-            Converta e analise suas notas fiscais (NF-e / NFS-e)
+            Ferramentas para conversão e análise de NF-e
           </p>
         </div>
 
-        {/* Upload Area */}
-        <Card className='mb-6'>
-          <CardHeader>
-            <CardTitle className='text-lg'>Upload de Arquivos</CardTitle>
-            <CardDescription>
-              Arraste arquivos XML ou um arquivo ZIP contendo multiplos XMLs
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              className={`relative flex min-h-[200px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed transition-colors ${
-                isDragOver
-                  ? 'border-primary bg-primary/5'
-                  : 'border-muted-foreground/25 hover:border-primary/50'
-              }`}
-            >
-              <input
-                type='file'
-                accept='.xml,.zip'
-                multiple
-                onChange={handleFileChange}
-                className='absolute inset-0 cursor-pointer opacity-0'
-              />
-              {isProcessing ? (
-                <>
-                  <Loader2 className='mb-4 h-12 w-12 animate-spin text-primary' />
-                  <p className='text-sm font-medium text-foreground'>Processando arquivos...</p>
-                </>
-              ) : (
-                <>
-                  <div className='mb-4 flex items-center gap-3'>
-                    <Upload
-                      className={`h-10 w-10 ${isDragOver ? 'text-primary' : 'text-muted-foreground'}`}
-                    />
-                    <FileArchive
-                      className={`h-10 w-10 ${isDragOver ? 'text-primary' : 'text-muted-foreground'}`}
-                    />
-                  </div>
-                  <p className='mb-1 text-sm font-medium text-foreground'>
-                    {isDragOver ? 'Solte os arquivos aqui' : 'Arraste arquivos XML ou ZIP aqui'}
-                  </p>
-                  <p className='text-xs text-muted-foreground'>
-                    ou clique para selecionar (suporta multiplos arquivos)
-                  </p>
-                </>
-              )}
-            </div>
-
-            {files.length > 0 && (
-              <div className='mt-4 flex items-center justify-between'>
-                <div className='flex items-center gap-4 text-sm'>
-                  {successCount > 0 && (
-                    <span className='flex items-center gap-1 text-green-600'>
-                      <CheckCircle2 className='h-4 w-4' />
-                      {successCount} processado{successCount > 1 ? 's' : ''}
-                    </span>
-                  )}
-                  {errorCount > 0 && (
-                    <span className='flex items-center gap-1 text-destructive'>
-                      <AlertCircle className='h-4 w-4' />
-                      {errorCount} erro{errorCount > 1 ? 's' : ''}
-                    </span>
-                  )}
-                </div>
-                <div className='flex items-center gap-2'>
-                {successCount > 0 && (
+        <Tabs defaultValue="xml-to-pdf" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="xml-to-pdf">XML para PDF & Análise</TabsTrigger>
+            <TabsTrigger value="pdf-to-xml">PDF para XML</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="xml-to-pdf">
+            <Card className='mt-6'>
+              <CardHeader>
+                <CardTitle className='text-lg'>Upload de Arquivos</CardTitle>
+                <CardDescription>
+                  Arraste arquivos XML ou um arquivo ZIP contendo múltiplos XMLs
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  className={`relative flex min-h-[200px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed transition-colors ${
+                    isDragOver
+                      ? 'border-primary bg-primary/5'
+                      : 'border-muted-foreground/25 hover:border-primary/50'
+                  }`}
+                >
+                  <input
+                    type='file'
+                    accept='.xml,.zip'
+                    multiple
+                    onChange={handleFileChange}
+                    className='absolute inset-0 cursor-pointer opacity-0'
+                  />
+                  {isProcessing ? (
                     <>
-                        <Button onClick={handleDownloadExcel} size='sm' className='gap-2'>
-                            <FileSpreadsheet className='h-4 w-4' />
-                            Excel
-                        </Button>
-                        <Button onClick={handleDownloadAllPDFs} size='sm' className='gap-2' disabled={isDownloading}>
-                        {isDownloading ? (
-                            <>
-                            <Loader2 className='h-4 w-4 animate-spin' />
-                            Gerando...
-                            </>
-                        ) : (
-                            <>
-                            <Download className='h-4 w-4' />
-                            {successCount > 1 ? `PDFs (${successCount})` : 'PDF'}
-                            </>
-                        )}
-                        </Button>
+                      <Loader2 className='mb-4 h-12 w-12 animate-spin text-primary' />
+                      <p className='text-sm font-medium text-foreground'>Processando arquivos...</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className='mb-4 flex items-center gap-3'>
+                        <Upload
+                          className={`h-10 w-10 ${isDragOver ? 'text-primary' : 'text-muted-foreground'}`}
+                        />
+                        <FileArchive
+                          className={`h-10 w-10 ${isDragOver ? 'text-primary' : 'text-muted-foreground'}`}
+                        />
+                      </div>
+                      <p className='mb-1 text-sm font-medium text-foreground'>
+                        {isDragOver ? 'Solte os arquivos aqui' : 'Arraste arquivos XML ou ZIP aqui'}
+                      </p>
+                      <p className='text-xs text-muted-foreground'>
+                        ou clique para selecionar (suporta múltiplos arquivos)
+                      </p>
                     </>
                   )}
-                  <Button onClick={handleClear} variant='outline' size='sm'>
-                    <X className='h-4 w-4' />
-                  </Button>
                 </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
-        {/* Results Area */}
-        {files.length > 0 && (
-          <Tabs value={activeTab} onValueChange={setActiveTab} className='w-full'>
-            <TabsList className='mb-4 grid w-full grid-cols-4'>
-              <TabsTrigger value='list' className='gap-2'>
-                <List className='h-4 w-4' />
-                Lista
-              </TabsTrigger>
-              <TabsTrigger value='dashboard' className='gap-2'>
-                <BarChart3 className='h-4 w-4' />
-                Dashboard
-              </TabsTrigger>
-              <TabsTrigger value='search' className='gap-2'>
-                <Search className='h-4 w-4' />
-                Pesquisa
-              </TabsTrigger>
-               <TabsTrigger value='map' className='gap-2'>
-                <Map className='h-4 w-4' />
-                Mapa
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value='list' className='space-y-4'>
-          {files.map((processedFile, index) => (
-              <Card
-                key={index}
-                className={processedFile.error ? 'border-destructive/50' : ''}
-              >
-                <CardHeader
-                  className='cursor-pointer'
-                  onClick={() =>
-                    processedFile.nfeData &&
-                    setExpandedIndex(expandedIndex === index ? null : index)
-                  }
-                >
-                  <div className='flex items-center justify-between'>
-                    <div className='flex items-center gap-3'>
-                      {processedFile.error ? (
-                        <AlertCircle className='h-5 w-5 flex-shrink-0 text-destructive' />
-                      ) : (
-                        <CheckCircle2 className='h-5 w-5 flex-shrink-0 text-green-600' />
+                {files.length > 0 && (
+                  <div className='mt-4 flex items-center justify-between'>
+                    <div className='flex items-center gap-4 text-sm'>
+                      {successCount > 0 && (
+                        <span className='flex items-center gap-1 text-green-600'>
+                          <CheckCircle2 className='h-4 w-4' />
+                          {successCount} processado{successCount > 1 ? 's' : ''}
+                        </span>
                       )}
-                      <div>
-                        <CardTitle className='text-base'>
-                          {processedFile.fileName}
-                        </CardTitle>
-                        {processedFile.error ? (
-                          <CardDescription className='text-destructive'>
-                            {processedFile.error}
-                          </CardDescription>
-                        ) : processedFile.nfeData ? (
-                          <CardDescription>
-                            {processedFile.nfeData.tipo === 'NFe' ? 'NF-e' : 'Nota Fiscal'}{" "}
-                            - Numero: {processedFile.nfeData.numero || 'N/A'} -{" "}
-                            {formatCurrency(processedFile.nfeData.impostos.valorTotal)}
-                          </CardDescription>
-                        ) : null}
-                      </div>
+                      {errorCount > 0 && (
+                        <span className='flex items-center gap-1 text-destructive'>
+                          <AlertCircle className='h-4 w-4' />
+                          {errorCount} erro{errorCount > 1 ? 's' : ''}
+                        </span>
+                      )}
                     </div>
                     <div className='flex items-center gap-2'>
-                      {processedFile.nfeData && (
+                    {successCount > 0 && (
                         <>
-                          <Button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleDownloadPDF(processedFile)
-                            }}
-                            size='sm'
-                            variant='outline'
-                            className='gap-2'
-                          >
-                            <Download className='h-4 w-4' />
-                            PDF
-                          </Button>
-                          {expandedIndex === index ? (
-                            <ChevronUp className='h-5 w-5 text-muted-foreground' />
-                          ) : (
-                            <ChevronDown className='h-5 w-5 text-muted-foreground' />
-                          )}
+                            <Button onClick={handleDownloadExcel} size='sm' className='gap-2'>
+                                <FileSpreadsheet className='h-4 w-4' />
+                                Excel
+                            </Button>
+                            <Button onClick={handleDownloadAllPDFs} size='sm' className='gap-2' disabled={isDownloading}>
+                            {isDownloading ? (
+                                <>
+                                <Loader2 className='h-4 w-4 animate-spin' />
+                                Gerando...
+                                </>
+                            ) : (
+                                <>
+                                <Download className='h-4 w-4' />
+                                {successCount > 1 ? `PDFs (${successCount})` : 'PDF'}
+                                </>
+                            )}
+                            </Button>
                         </>
                       )}
+                      <Button onClick={handleClear} variant='outline' size='sm'>
+                        <X className='h-4 w-4' />
+                      </Button>
                     </div>
                   </div>
-                </CardHeader>
-
-                {expandedIndex === index && processedFile.nfeData && (
-                  <CardContent className='space-y-6 border-t pt-6'>
-                    {/* Info Geral */}
-                    <div className='grid gap-4 rounded-lg bg-muted/50 p-4 sm:grid-cols-2 lg:grid-cols-4'>
-                      <div>
-                        <p className='text-xs font-medium uppercase text-muted-foreground'>
-                          Numero
-                        </p>
-                        <p className='text-lg font-semibold'>
-                          {processedFile.nfeData.numero || 'N/A'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className='text-xs font-medium uppercase text-muted-foreground'>
-                          Serie
-                        </p>
-                        <p className='text-lg font-semibold'>
-                          {processedFile.nfeData.serie || 'N/A'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className='text-xs font-medium uppercase text-muted-foreground'>
-                          Data Emissao
-                        </p>
-                        <p className='text-lg font-semibold'>
-                          {processedFile.nfeData.dataEmissao || 'N/A'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className='text-xs font-medium uppercase text-muted-foreground'>
-                          Valor Total
-                        </p>
-                        <p className='text-lg font-semibold text-primary'>
-                          {formatCurrency(processedFile.nfeData.impostos.valorTotal)}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Informações Logísticas */}
-                    {(processedFile.nfeData.terminalEntrega || processedFile.nfeData.transbordo || processedFile.nfeData.retirada || processedFile.nfeData.tipoProduto !== 'OUTRO') && (
-                      <div className='grid gap-4 rounded-lg border border-blue-200 bg-blue-50/50 p-4 dark:border-blue-900 dark:bg-blue-950/20 sm:grid-cols-2 lg:grid-cols-4'>
-                        <div className='flex items-start gap-2'>
-                          <Package className='mt-0.5 h-4 w-4 text-blue-600' />
-                          <div>
-                            <p className='text-xs font-medium uppercase text-muted-foreground'>
-                              Produto
-                            </p>
-                            <p className='font-semibold'>
-                              {processedFile.nfeData.tipoProduto === 'OUTRO' ? 'Outro' : processedFile.nfeData.tipoProduto}
-                            </p>
-                          </div>
-                        </div>
-                        {processedFile.nfeData.terminalEntrega && (
-                          <div className='flex items-start gap-2'>
-                            <MapPin className='mt-0.5 h-4 w-4 text-green-600' />
-                            <div>
-                              <p className='text-xs font-medium uppercase text-muted-foreground'>
-                                Terminal Entrega
-                              </p>
-                              <p className='font-semibold text-sm'>
-                                {processedFile.nfeData.terminalEntrega}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                        {processedFile.nfeData.transbordo && (
-                          <div className='flex items-start gap-2'>
-                            <Truck className='mt-0.5 h-4 w-4 text-orange-600' />
-                            <div>
-                              <p className='text-xs font-medium uppercase text-muted-foreground'>
-                                Transbordo
-                              </p>
-                              <p className='font-semibold text-sm'>
-                                {processedFile.nfeData.transbordo}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                        {processedFile.nfeData.retirada && (
-                          <div className='flex items-start gap-2'>
-                            <FileArchive className='mt-0.5 h-4 w-4 text-purple-600' />
-                            <div>
-                              <p className='text-xs font-medium uppercase text-muted-foreground'>
-                                Retirada
-                              </p>
-                              <p className='font-semibold text-sm'>
-                                {processedFile.nfeData.retirada}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Emitente e Destinatario */}
-                    <div className='grid gap-6 md:grid-cols-2'>
-                      <div className='rounded-lg border p-4'>
-                        <h3 className='mb-3 font-semibold text-foreground'>Emitente</h3>
-                        <div className='space-y-1 text-sm'>
-                          <p className='font-medium'>
-                            {processedFile.nfeData.emitente.nome || 'N/A'}
-                          </p>
-                          {processedFile.nfeData.emitente.nomeFantasia && (
-                            <p className='text-muted-foreground'>
-                              {processedFile.nfeData.emitente.nomeFantasia}
-                            </p>
-                          )}
-                          <p className='text-muted-foreground'>
-                            CNPJ: {processedFile.nfeData.emitente.cnpj || 'N/A'}
-                          </p>
-                          {processedFile.nfeData.emitente.endereco && (
-                            <p className='text-muted-foreground'>
-                              {processedFile.nfeData.emitente.endereco}
-                            </p>
-                          )}
-                          {(processedFile.nfeData.emitente.cidade ||
-                            processedFile.nfeData.emitente.uf) && (
-                            <p className='text-muted-foreground'>
-                              {processedFile.nfeData.emitente.cidade} -{" "}
-                              {processedFile.nfeData.emitente.uf}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className='rounded-lg border p-4'>
-                        <h3 className='mb-3 font-semibold text-foreground'>Destinatario</h3>
-                        <div className='space-y-1 text-sm'>
-                          <p className='font-medium'>
-                            {processedFile.nfeData.destinatario.nome || 'N/A'}
-                          </p>
-                          <p className='text-muted-foreground'>
-                            CPF/CNPJ: {processedFile.nfeData.destinatario.cpfCnpj || 'N/A'}
-                          </p>
-                          {processedFile.nfeData.destinatario.endereco && (
-                            <p className='text-muted-foreground'>
-                              {processedFile.nfeData.destinatario.endereco}
-                            </p>
-                          )}
-                          {(processedFile.nfeData.destinatario.cidade ||
-                            processedFile.nfeData.destinatario.uf) && (
-                            <p className='text-muted-foreground'>
-                              {processedFile.nfeData.destinatario.cidade} -{" "}
-                              {processedFile.nfeData.destinatario.uf}
-                            </p>
-                          )}
-                          {processedFile.nfeData.destinatario.email && (
-                            <p className='text-muted-foreground'>
-                              {processedFile.nfeData.destinatario.email}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Itens */}
-                    {processedFile.nfeData.itens.length > 0 && (
-                      <div>
-                        <h3 className='mb-3 font-semibold text-foreground'>
-                          Produtos / Servicos
-                        </h3>
-                        <div className='overflow-x-auto rounded-lg border'>
-                          <table className='w-full text-sm'>
-                            <thead className='bg-muted'>
-                              <tr>
-                                <th className='px-4 py-3 text-left font-medium'>Descricao</th>
-                                <th className='px-4 py-3 text-center font-medium'>Qtd</th>
-                                <th className='px-4 py-3 text-right font-medium'>V. Unit</th>
-                                <th className='px-4 py-3 text-right font-medium'>V. Total</th>
-                              </tr>
-                            </thead>
-                            <tbody className='divide-y'>
-                              {processedFile.nfeData.itens.map((item, itemIndex) => (
-                                <tr key={itemIndex} className='hover:bg-muted/50'>
-                                  <td className='px-4 py-3'>
-                                    <p className='font-medium'>{item.descricao}</p>
-                                    {item.ncm && (
-                                      <p className='text-xs text-muted-foreground'>
-                                        NCM: {item.ncm}
-                                      </p>
-                                    )}
-                                  </td>
-                                  <td className='px-4 py-3 text-center'>
-                                    {item.quantidade.toFixed(2)} {item.unidade}
-                                  </td>
-                                  <td className='px-4 py-3 text-right'>
-                                    {formatCurrency(item.valorUnitario)}
-                                  </td>
-                                  <td className='px-4 py-3 text-right font-medium'>
-                                    {formatCurrency(item.valorTotal)}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Totais */}
-                    <div className='rounded-lg border p-4'>
-                      <h3 className='mb-3 font-semibold text-foreground'>Resumo dos Valores</h3>
-                      <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
-                        <div className='flex justify-between'>
-                          <span className='text-muted-foreground'>Produtos/Servicos:</span>
-                          <span className='font-medium'>
-                            {formatCurrency(processedFile.nfeData.impostos.valorProdutos)}
-                          </span>
-                        </div>
-                        <div className='flex justify-between'>
-                          <span className='text-muted-foreground'>Desconto:</span>
-                          <span className='font-medium'>
-                            {formatCurrency(processedFile.nfeData.impostos.desconto)}
-                          </span>
-                        </div>
-                        <div className='flex justify-between'>
-                          <span className='text-muted-foreground'>Frete:</span>
-                          <span className='font-medium'>
-                            {formatCurrency(processedFile.nfeData.impostos.valorFrete)}
-                          </span>
-                        </div>
-                        <div className='flex justify-between'>
-                          <span className='text-muted-foreground'>ICMS:</span>
-                          <span className='font-medium'>
-                            {formatCurrency(processedFile.nfeData.impostos.valorICMS)}
-                          </span>
-                        </div>
-                        <div className='flex justify-between'>
-                          <span className='text-muted-foreground'>IPI:</span>
-                          <span className='font-medium'>
-                            {formatCurrency(processedFile.nfeData.impostos.valorIPI)}
-                          </span>
-                        </div>
-                        <div className='flex justify-between'>
-                          <span className='text-muted-foreground'>Outras Desp.:</span>
-                          <span className='font-medium'>
-                            {formatCurrency(processedFile.nfeData.impostos.outrasDesp)}
-                          </span>
-                        </div>
-                      </div>
-                      <div className='mt-4 flex items-center justify-between border-t pt-4'>
-                        <span className='text-lg font-semibold'>Valor Total:</span>
-                        <span className='text-2xl font-bold text-primary'>
-                          {formatCurrency(processedFile.nfeData.impostos.valorTotal)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Chave de Acesso */}
-                    {processedFile.nfeData.chaveAcesso && (
-                      <div className='rounded-lg bg-muted/50 p-4'>
-                        <p className='text-xs font-medium uppercase text-muted-foreground'>
-                          Chave de Acesso
-                        </p>
-                        <p className='mt-1 break-all font-mono text-sm'>
-                          {processedFile.nfeData.chaveAcesso}
-                        </p>
-                      </div>
-                    )}
-                  </CardContent>
                 )}
-              </Card>
-            ))}
-            </TabsContent>
+              </CardContent>
+            </Card>
 
-            <TabsContent value='dashboard'>
-              <Dashboard files={files} />
-            </TabsContent>
+            {files.length > 0 && (
+              <Tabs value={activeTab} onValueChange={setActiveTab} className='w-full mt-6'>
+                <TabsList className='mb-4 grid w-full grid-cols-4'>
+                  <TabsTrigger value='list' className='gap-2'>
+                    <List className='h-4 w-4' />
+                    Lista
+                  </TabsTrigger>
+                  <TabsTrigger value='dashboard' className='gap-2'>
+                    <BarChart3 className='h-4 w-4' />
+                    Dashboard
+                  </TabsTrigger>
+                  <TabsTrigger value='search' className='gap-2'>
+                    <Search className='h-4 w-4' />
+                    Pesquisa
+                  </TabsTrigger>
+                   <TabsTrigger value='map' className='gap-2'>
+                    <Map className='h-4 w-4' />
+                    Mapa
+                  </TabsTrigger>
+                </TabsList>
 
-            <TabsContent value='search'>
-              <SearchPanel 
-                files={files} 
-                onSelectFile={(index) => {
-                  setActiveTab('list')
-                  setExpandedIndex(index)
-                  // Scroll to the selected card
-                  setTimeout(() => {
-                    const card = document.querySelector(`[data-file-index="${index}"]`);
-                    card?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  }, 100)
-                }}
-              />
-            </TabsContent>
-            
-            <TabsContent value='map'>
-              <MapPanel files={files} />
-            </TabsContent>
+                <TabsContent value='list' className='space-y-4'>
+              {files.map((processedFile, index) => (
+                  <Card
+                    key={index}
+                    className={processedFile.error ? 'border-destructive/50' : ''}
+                  >
+                    <CardHeader
+                      className='cursor-pointer'
+                      onClick={() =>
+                        processedFile.nfeData &&
+                        setExpandedIndex(expandedIndex === index ? null : index)
+                      }
+                    >
+                      <div className='flex items-center justify-between'>
+                        <div className='flex items-center gap-3'>
+                          {processedFile.error ? (
+                            <AlertCircle className='h-5 w-5 flex-shrink-0 text-destructive' />
+                          ) : (
+                            <CheckCircle2 className='h-5 w-5 flex-shrink-0 text-green-600' />
+                          )}
+                          <div>
+                            <CardTitle className='text-base'>
+                              {processedFile.fileName}
+                            </CardTitle>
+                            {processedFile.error ? (
+                              <CardDescription className='text-destructive'>
+                                {processedFile.error}
+                              </CardDescription>
+                            ) : processedFile.nfeData ? (
+                              <CardDescription>
+                                {processedFile.nfeData.tipo === 'NFe' ? 'NF-e' : 'Nota Fiscal'}{" "}
+                                - Numero: {processedFile.nfeData.numero || 'N/A'} -{" "}
+                                {formatCurrency(processedFile.nfeData.impostos.valorTotal)}
+                              </CardDescription>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className='flex items-center gap-2'>
+                          {processedFile.nfeData && (
+                            <>
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleDownloadPDF(processedFile)
+                                }}
+                                size='sm'
+                                variant='outline'
+                                className='gap-2'
+                              >
+                                <Download className='h-4 w-4' />
+                                PDF
+                              </Button>
+                              {expandedIndex === index ? (
+                                <ChevronUp className='h-5 w-5 text-muted-foreground' />
+                              ) : (
+                                <ChevronDown className='h-5 w-5 text-muted-foreground' />
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </CardHeader>
 
-          </Tabs>
-        )}
+                    {expandedIndex === index && processedFile.nfeData && (
+                      <CardContent className='space-y-6 border-t pt-6'>
+                        <div className='grid gap-4 rounded-lg bg-muted/50 p-4 sm:grid-cols-2 lg:grid-cols-4'>
+                          {/* ... more details */}
+                        </div>
+                      </CardContent>
+                    )}
+                  </Card>
+                ))}
+                </TabsContent>
+
+                <TabsContent value='dashboard'>
+                  <Dashboard files={files} />
+                </TabsContent>
+
+                <TabsContent value='search'>
+                  <SearchPanel 
+                    files={files} 
+                    onSelectFile={(index) => {
+                      setActiveTab('list')
+                      setExpandedIndex(index)
+                      setTimeout(() => {
+                        const card = document.querySelector(`[data-file-index="${index}"]`);
+                        card?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }, 100)
+                    }}
+                  />
+                </TabsContent>
+                
+                <TabsContent value='map'>
+                  <MapPanel files={files} />
+                </TabsContent>
+
+              </Tabs>
+            )}
+          </TabsContent>
+
+          <TabsContent value="pdf-to-xml">
+            <Card className='mt-6'>
+                <CardHeader>
+                    <CardTitle className='text-lg'>Conversor de PDF para XML</CardTitle>
+                    <CardDescription>
+                        Envie um arquivo PDF de uma nota fiscal para extrair os dados e gerar um arquivo XML.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <NfeConverter />
+                </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   )

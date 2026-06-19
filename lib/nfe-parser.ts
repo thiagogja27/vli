@@ -649,3 +649,292 @@ function detectTipoProduto(descricaoProduto: string, infComplementares: string):
 }
 
 // Alteração para teste de deploy
+
+
+// Parser best-effort para DANFE (texto de NF-e/NFC-e) extraído de PDF.
+// O layout do DANFE varia entre emissores, então usamos heurísticas e regex.
+
+export type NfeItem = {
+  codigo?: string
+  descricao: string
+  ncm?: string
+  cfop?: string
+  unidade?: string
+  quantidade?: string
+  valorUnitario?: string
+  valorTotal?: string
+}
+
+export type Participante = {
+  nome?: string
+  documento?: string
+  endereco?: string
+  municipio?: string
+  uf?: string
+  inscricaoEstadual?: string
+}
+
+export type NfeData = {
+  chaveAcesso?: string
+  numero?: string
+  serie?: string
+  modelo?: string
+  dataEmissao?: string
+  naturezaOperacao?: string
+  protocolo?: string
+  emitente: Participante
+  destinatario: Participante
+  valorTotal?: string
+  valorProdutos?: string
+  valorIcms?: string
+  valorFrete?: string
+  itens: NfeItem[]
+}
+
+function clean(s?: string) {
+  return s?.replace(/\s+/g, " ").trim()
+}
+
+function matchFirst(text: string, regexes: RegExp[]): string | undefined {
+  for (const re of regexes) {
+    const m = text.match(re)
+    if (m && m[1]) return clean(m[1])
+  }
+  return undefined
+}
+
+function extractChave(text: string): string | undefined {
+  // 44 dígitos, podendo vir separados por espaços
+  const compact = text.replace(/[.\-\/]/g, "")
+  const m = compact.match(/(\d[\d\s]{50,}\d)/g)
+  if (m) {
+    for (const candidate of m) {
+      const digits = candidate.replace(/\s/g, "")
+      if (digits.length === 44) return digits
+      // às vezes captura mais, tenta achar 44 consecutivos
+      const inner = digits.match(/\d{44}/)
+      if (inner) return inner[0]
+    }
+  }
+  const direct = compact.match(/\d{44}/)
+  return direct ? direct[0] : undefined
+}
+
+function extractCnpjCpf(block: string): string | undefined {
+  const cnpj = block.match(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/)
+  if (cnpj) return clean(cnpj[0])
+  const cpf = block.match(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/)
+  if (cpf) return clean(cpf[0])
+  return undefined
+}
+
+function extractValor(text: string, labels: string[]): string | undefined {
+  for (const label of labels) {
+    const re = new RegExp(
+      label + "[^\\d-]{0,40}([\\d.]+,\\d{2})",
+      "i",
+    )
+    const m = text.match(re)
+    if (m && m[1]) return m[1]
+  }
+  return undefined
+}
+
+export function parseNfe(fullText: string): NfeData {
+  const text = fullText.replace(/\r/g, "")
+
+  const chaveAcesso = extractChave(text)
+
+  const numero = matchFirst(text, [
+    /N[ºo°.\s]*\s*([\d.]{1,12})\s*S[ÉE]RIE/i,
+    /N[ºo°.]\s*([\d.]{3,12})/i,
+    /N[úu]mero[:\s]*([\d.]{1,12})/i,
+  ])
+
+  const serie = matchFirst(text, [
+    /S[ÉE]RIE[:\s]*([\d]{1,4})/i,
+  ])
+
+  const dataEmissao = matchFirst(text, [
+    /EMISS[ÃA]O[:\s]*([0-3]?\d\/[0-1]?\d\/\d{2,4})/i,
+    /DATA DA EMISS[ÃA]O[:\s]*([0-3]?\d\/[0-1]?\d\/\d{2,4})/i,
+    /\b([0-3]\d\/[0-1]\d\/\d{4})\b/,
+  ])
+
+  const naturezaOperacao = matchFirst(text, [
+    /NATUREZA DA OPERA[ÇC][ÃA]O[:\s]*([^\n]+)/i,
+  ])
+
+  const protocolo = matchFirst(text, [
+    /PROTOCOLO DE AUTORIZA[ÇC][ÃA]O[^\d]*([\d]{12,20})/i,
+    /PROTOCOLO[:\s]*([\d]{12,20})/i,
+  ])
+
+  // Tenta separar blocos de emitente e destinatário
+  const destIdx = text.search(/DESTINAT[ÁA]RIO/i)
+  const emitBlock = destIdx > 0 ? text.slice(0, destIdx) : text
+  const destBlock = destIdx > 0 ? text.slice(destIdx, destIdx + 600) : ""
+
+  const emitente: Participante = {
+    nome: matchFirst(emitBlock, [
+      /(?:RAZ[ÃA]O SOCIAL|EMITENTE|NOME)[:\s]*([^\n]+)/i,
+    ]),
+    documento: extractCnpjCpf(emitBlock),
+    inscricaoEstadual: matchFirst(emitBlock, [
+      /INSCRI[ÇC][ÃA]O ESTADUAL[:\s]*([\d.]{6,20})/i,
+    ]),
+    municipio: matchFirst(emitBlock, [
+      /MUNIC[ÍI]PIO[:\s]*([^\n,]+)/i,
+    ]),
+    uf: matchFirst(emitBlock, [/\bUF[:\s]*([A-Z]{2})\b/]),
+  }
+
+  const destinatario: Participante = {
+    nome: matchFirst(destBlock, [
+      /DESTINAT[ÁA]RIO[^\n]*\n([^\n]+)/i,
+      /(?:RAZ[ÃA]O SOCIAL|NOME)[:\s]*([^\n]+)/i,
+    ]),
+    documento: extractCnpjCpf(destBlock),
+    municipio: matchFirst(destBlock, [/MUNIC[ÍI]PIO[:\s]*([^\n,]+)/i]),
+    uf: matchFirst(destBlock, [/\bUF[:\s]*([A-Z]{2})\b/]),
+  }
+
+  const valorTotal = extractValor(text, [
+    "VALOR TOTAL DA NOTA",
+    "VALOR TOTAL DA NF-?e",
+    "VALOR A PAGAR",
+    "VALOR TOTAL",
+  ])
+  const valorProdutos = extractValor(text, [
+    "VALOR TOTAL DOS PRODUTOS",
+    "VALOR DOS PRODUTOS",
+  ])
+  const valorIcms = extractValor(text, ["VALOR DO ICMS", "VALOR TOTAL DO ICMS"])
+  const valorFrete = extractValor(text, ["VALOR DO FRETE"])
+
+  const itens = parseItens(text)
+
+  return {
+    chaveAcesso,
+    numero,
+    serie,
+    modelo: chaveAcesso ? chaveAcesso.slice(20, 22) : undefined,
+    dataEmissao,
+    naturezaOperacao,
+    protocolo,
+    emitente,
+    destinatario,
+    valorTotal,
+    valorProdutos,
+    valorIcms,
+    valorFrete,
+    itens,
+  }
+}
+
+// Converte número no formato brasileiro ("93.360,00" -> 93360) para Number.
+function parseBrNumber(s?: string): number | undefined {
+  if (!s) return undefined
+  const n = Number.parseFloat(s.replace(/\./g, "").replace(",", "."))
+  return Number.isNaN(n) ? undefined : n
+}
+
+// Formata Number de volta para o padrão brasileiro.
+function formatBrNumber(n: number, maxDecimals = 4): string {
+  return n.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: maxDecimals,
+  })
+}
+
+// Tenta extrair a tabela de itens/produtos do DANFE.
+function parseItens(text: string): NfeItem[] {
+  const itens: NfeItem[] = []
+  const lines = text.split("\n")
+
+  // Localiza o início da seção de produtos
+  const start = lines.findIndex((l) =>
+    /DADOS DOS PRODUTOS|DESCRI[ÇC][ÃA]O DO PRODUTO|C[ÓO]DIGO.*DESCRI[ÇC][ÃA]O/i.test(
+      l,
+    ),
+  )
+  if (start === -1) return itens
+
+  const end = lines.findIndex(
+    (l, i) =>
+      i > start &&
+      /DADOS ADICIONAIS|C[ÁA]LCULO DO IMPOSTO|INFORMA[ÇC][ÕO]ES COMPLEMENTARES/i.test(
+        l,
+      ),
+  )
+
+  const region = lines.slice(start + 1, end === -1 ? lines.length : end)
+
+  // Reagrupa as linhas em "linhas lógicas" de item. Cada item começa numa
+  // linha que contém um NCM (8 dígitos). Linhas seguintes sem NCM são
+  // continuações (descrição ou números que quebraram de coluna, como uma
+  // quantidade dividida em duas linhas) e são anexadas ao item atual.
+  const rows: string[] = []
+  for (const raw of region) {
+    const line = raw.trim()
+    if (!line) continue
+    const hasNcm = /\b\d{8}\b/.test(line)
+    if (hasNcm) {
+      rows.push(line)
+    } else if (rows.length > 0) {
+      rows[rows.length - 1] += " " + line
+    }
+  }
+
+  for (const row of rows) {
+    const ncm = row.match(/\b\d{8}\b/)?.[0]
+    const cfop = row.match(/\b[1-7]\d{3}\b/)?.[0]
+    const unidade = row.match(
+      /\b(UN|KG|TON|PC|P[ÇC]|CX|LT|L|MT|M2|M3|M|DZ|PT|SC|FD|GR|MG|ML|CD|RL|JG|KIT|HR)\b/i,
+    )?.[0]
+
+    // Valores monetários/quantidade no formato brasileiro (1 a 4 casas).
+    const valores = row.match(/\d[\d.]*,\d{1,4}/g) ?? []
+    if (!valores.length) continue
+
+    // Os três últimos números costumam ser QUANT, VL UNIT e VL TOTAL.
+    let quantidade =
+      valores.length >= 3 ? valores[valores.length - 3] : undefined
+    const valorUnitario =
+      valores.length >= 2 ? valores[valores.length - 2] : undefined
+    const valorTotal = valores[valores.length - 1]
+
+    // Descrição: texto antes do NCM, sem o código do produto.
+    const beforeNcm = ncm ? row.slice(0, row.indexOf(ncm)) : row
+    const codigo = beforeNcm.match(/^\s*([0-9A-Za-z\-./]+)\s+/)?.[1]
+    const descricao =
+      clean(beforeNcm.replace(/^\s*[0-9A-Za-z\-./]+\s+/, "")) || "Item"
+
+    // Reconciliação: a quantidade pode ter quebrado de linha no DANFE e vir
+    // truncada/ausente. Como total = quantidade × unitário, recalculamos a
+    // quantidade quando o valor extraído não fecha com unitário e total.
+    const vu = parseBrNumber(valorUnitario)
+    const vt = parseBrNumber(valorTotal)
+    const q = parseBrNumber(quantidade)
+    if (vu && vu !== 0 && vt) {
+      const esperado = vt / vu
+      const tolerancia = Math.max(0.01, esperado * 0.01)
+      if (q === undefined || Math.abs(q - esperado) > tolerancia) {
+        quantidade = formatBrNumber(esperado)
+      }
+    }
+
+    itens.push({
+      codigo,
+      descricao,
+      ncm,
+      cfop,
+      unidade,
+      quantidade,
+      valorUnitario,
+      valorTotal,
+    })
+  }
+
+  return itens
+}
