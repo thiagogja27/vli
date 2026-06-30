@@ -609,13 +609,22 @@ function formatPhone(phone: string): string {
 
 // Funções para extrair informações das informações complementares
 function extractTerminalEntrega(infComplementares: string): string {
-  if (!infComplementares) return ""
-  // Procura por "ENTREGA:" e pega o nome do terminal
-  const match = infComplementares.match(/ENTREGA:\s*([^,]+)/i)
-  if (match) {
-    return match[1].trim()
+  if (!infComplementares) return "";
+
+  // 1. Tenta o padrão original "ENTREGA:"
+  let match = infComplementares.match(/ENTREGA:\s*([^,;]+)/i);
+  if (match && match[1]) {
+    return match[1].trim();
   }
-  return ""
+
+  // 2. Tenta os padrões com "ALFANDEGADO" ou "ALFADEGADO"
+  // A regex procura pela palavra-chave, ignora pontuação opcional e captura o texto seguinte até uma vírgula ou ponto e vírgula.
+  match = infComplementares.match(/(?:ALFANDEGADO|ALFADEGADO)[\s:]*([^,;]+)/i);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+
+  return "";
 }
 
 function extractTransbordo(infComplementares: string): string {
